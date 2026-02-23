@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>电商详情页图片生成工具</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    h1 { text-align: center; margin-bottom: 24px; font-size: 24px; }
+    .section { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .section h2 { font-size: 18px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
+    .upload-row { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 12px; }
+    .upload-item { flex: 1; min-width: 200px; }
+    .upload-item label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 14px; }
+    .upload-item input[type="file"] { font-size: 14px; }
+    .upload-item .preview { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .upload-item .preview img { height: 80px; border-radius: 4px; border: 1px solid #ddd; }
+    .form-row { display: flex; gap: 16px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+    .form-row label { font-weight: 600; font-size: 14px; }
+    .form-row input[type="text"] { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; width: 200px; }
+    .btn { padding: 8px 20px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+    .btn-green { background: #16a34a; color: #fff; }
+    .btn-green:hover:not(:disabled) { background: #15803d; }
+    .btn-sm { padding: 4px 12px; font-size: 12px; }
+    .btn-outline { background: #fff; color: #2563eb; border: 1px solid #2563eb; }
+    .btn-outline:hover:not(:disabled) { background: #eff6ff; }
+    .btn-danger { background: #fff; color: #dc2626; border: 1px solid #dc2626; }
+    .btn-danger:hover:not(:disabled) { background: #fef2f2; }
+    .btn-secondary { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+    .btn-secondary:hover:not(:disabled) { background: #e5e7eb; }
+    .results-grid { display: flex; gap: 16px; flex-wrap: wrap; }
+    .result-card { background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: 12px; text-align: center; width: 220px; }
+    .result-card img { width: 100%; border-radius: 4px; margin-bottom: 8px; cursor: pointer; }
+    .result-card .label { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    .status { margin: 12px 0; padding: 10px; border-radius: 6px; font-size: 14px; }
+    .status.info { background: #eff6ff; color: #1e40af; }
+    .status.error { background: #fef2f2; color: #991b1b; }
+    .status.success { background: #f0fdf4; color: #166534; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ccc; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; }
+    .modal-overlay.active { display: flex; }
+    .modal-overlay img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+    .modal-overlay .close { position: absolute; top: 20px; right: 20px; color: #fff; font-size: 32px; cursor: pointer; }
+    .clothes-group { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 12px; background: #fafafa; }
+    .clothes-group-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .clothes-group-header .group-label { font-weight: 600; font-size: 15px; }
+    .clothes-group-body { display: flex; gap: 20px; flex-wrap: wrap; }
+    .clothes-group-body .upload-item { flex: 1; min-width: 180px; }
+    .check-icon { color: #16a34a; font-weight: bold; }
+    .step-divider { text-align: center; padding: 12px 0; color: #9ca3af; font-size: 13px; }
+    .final-preview { text-align: center; }
+    .final-preview img { max-width: 400px; width: 100%; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; }
+
+    /* History panel */
+    .history-panel { background: #fff; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .history-header h2 { font-size: 16px; margin: 0; padding: 0; border: none; }
+    .history-list { display: flex; gap: 10px; flex-wrap: wrap; }
+    .history-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 16px; min-width: 200px; max-width: 280px; background: #fafafa; position: relative; cursor: pointer; transition: border-color 0.2s; }
+    .history-card:hover { border-color: #2563eb; }
+    .history-card.active { border-color: #2563eb; background: #eff6ff; }
+    .history-card .hc-time { font-size: 13px; font-weight: 600; color: #374151; }
+    .history-card .hc-meta { font-size: 12px; color: #6b7280; margin-top: 4px; }
+    .history-card .hc-status { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-top: 6px; }
+    .hc-status.uploading { background: #fef3c7; color: #92400e; }
+    .hc-status.step1_done { background: #dbeafe; color: #1e40af; }
+    .hc-status.step2_done { background: #e0e7ff; color: #3730a3; }
+    .hc-status.finished { background: #d1fae5; color: #065f46; }
+    .history-card .hc-delete { position: absolute; top: 8px; right: 8px; background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 16px; line-height: 1; padding: 2px; }
+    .history-card .hc-delete:hover { color: #dc2626; }
+    .history-empty { font-size: 13px; color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>电商详情页图片生成工具</h1>
+
+    <!-- ==================== History Panel ==================== -->
+    <div class="history-panel">
+      <div class="history-header">
+        <h2>历史会话</h2>
+        <button class="btn btn-sm btn-primary" id="btnNewSession">+ 新建会话</button>
+      </div>
+      <div class="history-list" id="historyList">
+        <span class="history-empty">加载中...</span>
+      </div>
+    </div>
+
+    <!-- ==================== Step1 ==================== -->
+    <div class="section">
+      <h2>Step1: 上传素材</h2>
+      <div class="upload-row">
+        <div class="upload-item">
+          <label>模特正面照</label>
+          <input type="file" id="modelFront" accept="image/*">
+          <div class="preview" id="previewFront"></div>
+        </div>
+        <div class="upload-item">
+          <label>模特背面照</label>
+          <input type="file" id="modelBack" accept="image/*">
+          <div class="preview" id="previewBack"></div>
+        </div>
+      </div>
+
+      <h2 style="margin-top:20px;">平铺衣服图 (每组上传正面+背面)</h2>
+      <div id="clothesGroups"></div>
+      <button class="btn btn-secondary" id="btnAddGroup" style="margin-top:8px;">+ 添加一组颜色</button>
+
+      <div class="form-row">
+        <label>额外说明 (可选):</label>
+        <input type="text" id="additionalNotes" placeholder="如: oversized fit">
+        <button class="btn btn-primary" id="btnGenerate" disabled>开始生成 Step1</button>
+      </div>
+    </div>
+
+    <div id="step1StatusArea"></div>
+
+    <div class="section" id="step1ResultsSection" style="display:none;">
+      <h2>Step1 生成结果</h2>
+      <div class="results-grid" id="step1ResultsGrid"></div>
+      <div class="form-row" style="justify-content:center; margin-top:20px;">
+        <button class="btn btn-green" id="btnApproveStep1" style="display:none;">全部通过, 进入 Step2</button>
+      </div>
+    </div>
+
+    <!-- ==================== Step2 ==================== -->
+    <div class="section" id="step2Section" style="display:none;">
+      <h2>Step2: 上传详情页参考图</h2>
+      <div class="upload-row">
+        <div class="upload-item">
+          <label>详情页参考图 (可分批上传, 每次追加)</label>
+          <input type="file" id="detailRefs" accept="image/*" multiple>
+        </div>
+      </div>
+      <div id="detailRefsList" style="margin-top:12px;"></div>
+      <div class="form-row">
+        <button class="btn btn-primary" id="btnGenerateStep2" disabled>生成未处理的参考图</button>
+      </div>
+    </div>
+
+    <div id="step2StatusArea"></div>
+
+    <div class="section" id="step2ResultsSection" style="display:none;">
+      <h2>Step2 生成结果</h2>
+      <div class="results-grid" id="step2ResultsGrid"></div>
+      <div class="form-row" style="justify-content:center; margin-top:20px;">
+        <button class="btn btn-green" id="btnStitch">全部通过, 拼接长图</button>
+      </div>
+    </div>
+
+    <!-- ==================== Final ==================== -->
+    <div class="section" id="finalSection" style="display:none;">
+      <h2>最终结果</h2>
+      <div class="final-preview" id="finalPreview"></div>
+      <div class="form-row" style="justify-content:center; margin-top:16px;">
+        <a class="btn btn-primary" id="btnDownload" href="#" download="detail-page.jpg">下载长图</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Image Modal -->
+  <div class="modal-overlay" id="modal">
+    <span class="close" id="modalClose">&times;</span>
+    <img id="modalImg" src="" alt="">
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    let currentSessionId = null;
+
+    // ==================== History ====================
+
+    const STATUS_LABELS = {
+      uploading: '上传中',
+      step1_done: 'Step1 完成',
+      step2_done: 'Step2 完成',
+      finished: '已完成',
+    };
+
+    async function loadHistory() {
+      try {
+        const res = await fetch('/api/history');
+        const data = await res.json();
+        renderHistory(data.sessions || []);
+      } catch {
+        $('historyList').innerHTML = '<span class="history-empty">加载失败</span>';
+      }
+    }
+
+    function renderHistory(sessions) {
+      const list = $('historyList');
+      if (sessions.length === 0) {
+        list.innerHTML = '<span class="history-empty">暂无历史会话</span>';
+        return;
+      }
+      list.innerHTML = '';
+      for (const s of sessions) {
+        const card = document.createElement('div');
+        card.className = 'history-card' + (s.sessionId === currentSessionId ? ' active' : '');
+        const time = new Date(s.createdAt).toLocaleString('zh-CN');
+        card.innerHTML = `
+          <div class="hc-time">${time}</div>
+          <div class="hc-meta">${s.groupCount} 组衣服</div>
+          <span class="hc-status ${s.status}">${STATUS_LABELS[s.status] || s.status}</span>
+          <button class="hc-delete" title="删除" data-id="${s.sessionId}">&times;</button>
+        `;
+        card.addEventListener('click', (e) => {
+          if (e.target.classList.contains('hc-delete')) return;
+          restoreSession(s.sessionId);
+        });
+        card.querySelector('.hc-delete').addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteSessionById(s.sessionId);
+        });
+        list.appendChild(card);
+      }
+    }
+
+    async function restoreSession(sessionId) {
+      try {
+        const res = await fetch('/api/history/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        applySessionState(data);
+        loadHistory();
+      } catch (err) {
+        alert('恢复会话失败: ' + err.message);
+      }
+    }
+
+    async function deleteSessionById(sessionId) {
+      if (!confirm('确定要删除这个会话吗? 所有文件将被永久删除。')) return;
+      try {
+        const res = await fetch(`/api/history/${sessionId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        if (data.activeSessionId !== currentSessionId) {
+          // Active session was deleted and replaced
+          await loadCurrentSession();
+        }
+        loadHistory();
+      } catch (err) {
+        alert('删除失败: ' + err.message);
+      }
+    }
+
+    $('btnNewSession').addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/session/new', { method: 'POST' });
+        const data = await res.json();
+        applySessionState(data);
+        loadHistory();
+      } catch (err) {
+        alert('创建会话失败: ' + err.message);
+      }
+    });
+
+    // ==================== Session State Application ====================
+
+    function resetUI() {
+      // Reset step1 upload state
+      uploadedModelFront = null;
+      uploadedModelBack = null;
+      groupCounter = 0;
+      groups = [];
+      $('modelFront').value = '';
+      $('modelBack').value = '';
+      $('previewFront').innerHTML = '';
+      $('previewBack').innerHTML = '';
+      $('clothesGroups').innerHTML = '';
+      $('additionalNotes').value = '';
+      $('btnGenerate').disabled = true;
+
+      // Reset step1 results
+      $('step1ResultsSection').style.display = 'none';
+      $('step1ResultsGrid').innerHTML = '';
+      $('btnApproveStep1').style.display = 'none';
+      $('step1StatusArea').innerHTML = '';
+
+      // Reset step2
+      $('step2Section').style.display = 'none';
+      $('detailRefs').value = '';
+      $('detailRefsList').innerHTML = '';
+      $('btnGenerateStep2').disabled = true;
+      serverDetailRefs = [];
+      generatedIndexes = new Set();
+
+      // Reset step2 results
+      $('step2ResultsSection').style.display = 'none';
+      $('step2ResultsGrid').innerHTML = '';
+      $('step2StatusArea').innerHTML = '';
+
+      // Reset final
+      $('finalSection').style.display = 'none';
+      $('finalPreview').innerHTML = '';
+    }
+
+    function applySessionState(data) {
+      resetUI();
+      currentSessionId = data.sessionId;
+
+      // Restore model previews
+      if (data.modelFront) {
+        uploadedModelFront = { name: data.modelFront };
+        $('previewFront').innerHTML = '<span class="check-icon">&#10003;</span> ' + data.modelFront;
+      }
+      if (data.modelBack) {
+        uploadedModelBack = { name: data.modelBack };
+        $('previewBack').innerHTML = '<span class="check-icon">&#10003;</span> ' + data.modelBack;
+      }
+
+      // Restore clothes groups
+      if (data.clothesGroups && data.clothesGroups.length > 0) {
+        for (const g of data.clothesGroups) {
+          const id = g.groupId;
+          const numPart = parseInt(id.replace('group-', ''), 10);
+          if (!isNaN(numPart) && numPart >= groupCounter) groupCounter = numPart + 1;
+          groups.push({
+            id,
+            frontFile: g.frontName ? { name: g.frontName } : null,
+            backFile: g.backName ? { name: g.backName } : null,
+            restoredFront: !!g.frontName,
+            restoredBack: !!g.backName,
+          });
+        }
+        renderGroups();
+      } else {
+        addGroup();
+      }
+
+      // Restore additional notes
+      if (data.additionalNotes) {
+        $('additionalNotes').value = data.additionalNotes;
+      }
+
+      updateStep1Btn();
+
+      // Restore step1 results
+      if (data.step1Results && data.step1Results.length > 0) {
+        renderStep1Results(data.step1Results.map(r => ({
+          groupId: r.groupId,
+          label: data.clothesGroups.find(g => g.groupId === r.groupId)?.label || r.groupId,
+          front: r.front,
+          back: r.back,
+        })));
+      }
+
+      // Show step2 if step1 is done
+      if (data.status === 'step1_done' || data.status === 'step2_done' || data.status === 'finished') {
+        $('step2Section').style.display = '';
+      }
+
+      // Restore detail refs and step2 results
+      if (data.detailRefs && data.detailRefs.length > 0) {
+        serverDetailRefs = data.detailRefs;
+        // Mark which ones have results
+        if (data.step2Results) {
+          for (const r of data.step2Results) generatedIndexes.add(r.index);
+        }
+        renderDetailRefsList();
+        updateStep2Btn();
+      }
+
+      if (data.step2Results && data.step2Results.length > 0) {
+        renderStep2Results(data.step2Results.map(r => ({
+          index: r.index,
+          name: (data.detailRefs.find(d => d.index === r.index) || {}).name || `Section ${r.index + 1}`,
+          url: r.url,
+        })));
+      }
+
+      // Restore final
+      if (data.finalPath) {
+        showFinal(data.finalPath);
+      }
+    }
+
+    async function loadCurrentSession() {
+      try {
+        const res = await fetch('/api/session');
+        const data = await res.json();
+        applySessionState(data);
+      } catch (err) {
+        console.error('Failed to load session:', err);
+      }
+    }
+
+    // ==================== Step1 State & Logic ====================
+    let uploadedModelFront = null;
+    let uploadedModelBack = null;
+    let groupCounter = 0;
+    let groups = [];
+
+    $('modelFront').addEventListener('change', async e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      uploadedModelFront = await fileToBase64Obj(file);
+      showPreview('previewFront', [uploadedModelFront]);
+      await uploadFile('modelFront', uploadedModelFront);
+      updateStep1Btn();
+    });
+
+    $('modelBack').addEventListener('change', async e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      uploadedModelBack = await fileToBase64Obj(file);
+      showPreview('previewBack', [uploadedModelBack]);
+      await uploadFile('modelBack', uploadedModelBack);
+      updateStep1Btn();
+    });
+
+    $('btnAddGroup').addEventListener('click', () => addGroup());
+
+    function addGroup() {
+      const id = 'group-' + groupCounter++;
+      groups.push({ id, frontFile: null, backFile: null });
+      renderGroups();
+    }
+
+    window.removeGroup = function(id) {
+      groups = groups.filter(g => g.id !== id);
+      renderGroups();
+      fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'removeGroup', groupId: id }),
+      });
+      updateStep1Btn();
+    };
+
+    function renderGroups() {
+      const container = $('clothesGroups');
+      container.innerHTML = '';
+      groups.forEach((g, idx) => {
+        const div = document.createElement('div');
+        div.className = 'clothes-group';
+        div.innerHTML = `
+          <div class="clothes-group-header">
+            <span class="group-label">第 ${idx + 1} 组</span>
+            <button class="btn btn-sm btn-danger" onclick="removeGroup('${g.id}')">删除</button>
+          </div>
+          <div class="clothes-group-body">
+            <div class="upload-item">
+              <label>衣服正面平铺图</label>
+              <input type="file" accept="image/*" data-group="${g.id}" data-side="front">
+              <div class="preview" id="prev-${g.id}-front"></div>
+            </div>
+            <div class="upload-item">
+              <label>衣服背面平铺图</label>
+              <input type="file" accept="image/*" data-group="${g.id}" data-side="back">
+              <div class="preview" id="prev-${g.id}-back"></div>
+            </div>
+          </div>
+        `;
+        container.appendChild(div);
+
+        // Restore preview — either from base64 data or from restored session (name-only)
+        if (g.frontFile) {
+          if (g.frontFile.data) {
+            showPreview(`prev-${g.id}-front`, [g.frontFile]);
+          } else if (g.restoredFront) {
+            document.getElementById(`prev-${g.id}-front`).innerHTML =
+              '<span class="check-icon">&#10003;</span> ' + g.frontFile.name;
+          }
+        }
+        if (g.backFile) {
+          if (g.backFile.data) {
+            showPreview(`prev-${g.id}-back`, [g.backFile]);
+          } else if (g.restoredBack) {
+            document.getElementById(`prev-${g.id}-back`).innerHTML =
+              '<span class="check-icon">&#10003;</span> ' + g.backFile.name;
+          }
+        }
+
+        div.querySelectorAll('input[type="file"]').forEach(input => {
+          input.addEventListener('change', handleGroupFileChange);
+        });
+      });
+    }
+
+    async function handleGroupFileChange(e) {
+      const input = e.target;
+      const groupId = input.dataset.group;
+      const side = input.dataset.side;
+      const file = input.files[0];
+      if (!file) return;
+
+      const group = groups.find(g => g.id === groupId);
+      const fileObj = await fileToBase64Obj(file);
+      if (side === 'front') { group.frontFile = fileObj; group.restoredFront = false; }
+      else { group.backFile = fileObj; group.restoredBack = false; }
+
+      showPreview(`prev-${groupId}-${side}`, [fileObj]);
+
+      const type = side === 'front' ? 'clothesGroupFront' : 'clothesGroupBack';
+      await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, groupId, file: { name: fileObj.name, data: fileObj.data } }),
+      });
+      updateStep1Btn();
+    }
+
+    function updateStep1Btn() {
+      const hasModel = uploadedModelFront && uploadedModelBack;
+      const hasCompleteGroup = groups.some(g => g.frontFile && g.backFile);
+      $('btnGenerate').disabled = !(hasModel && hasCompleteGroup);
+    }
+
+    $('btnGenerate').addEventListener('click', async () => {
+      $('btnGenerate').disabled = true;
+      showStatus('step1StatusArea', 'info', '<span class="spinner"></span>正在生成模特穿着图, 请耐心等待...');
+
+      try {
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ additionalNotes: $('additionalNotes').value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showStatus('step1StatusArea', 'success', `Step1 生成完成! 共 ${data.results.length} 组`);
+        renderStep1Results(data.results);
+        loadHistory(); // refresh history to show updated status
+      } catch (err) {
+        showStatus('step1StatusArea', 'error', `生成失败: ${err.message}`);
+      } finally {
+        updateStep1Btn();
+      }
+    });
+
+    function renderStep1Results(results) {
+      const grid = $('step1ResultsGrid');
+      grid.innerHTML = '';
+      $('step1ResultsSection').style.display = '';
+
+      for (const r of results) {
+        grid.appendChild(createStep1Card(r.groupId, r.label, 'front', r.front));
+        grid.appendChild(createStep1Card(r.groupId, r.label, 'back', r.back));
+      }
+      $('btnApproveStep1').style.display = '';
+    }
+
+    function createStep1Card(groupId, label, side, url) {
+      const card = document.createElement('div');
+      card.className = 'result-card';
+      card.id = `card-${groupId}-${side}`;
+      const ts = Date.now();
+      card.innerHTML = `
+        <div class="label">${label} - ${side === 'front' ? '正面' : '背面'}</div>
+        <img src="${url}?t=${ts}" alt="${label} ${side}" onclick="openModal(this.src)">
+        <button class="btn btn-sm btn-outline" onclick="regenerateStep1('${groupId}', '${side}')">重新生成</button>
+      `;
+      return card;
+    }
+
+    window.regenerateStep1 = async (groupId, side) => {
+      const card = $(`card-${groupId}-${side}`);
+      const btn = card.querySelector('button');
+      btn.disabled = true;
+      btn.textContent = '生成中...';
+      try {
+        const res = await fetch('/api/regenerate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ groupId, side }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        card.querySelector('img').src = data.url + '?t=' + Date.now();
+        showStatus('step1StatusArea', 'success', `已重新生成: ${groupId} ${side}`);
+      } catch (err) {
+        showStatus('step1StatusArea', 'error', `重新生成失败: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '重新生成';
+      }
+    };
+
+    // Approve Step1 → show Step2
+    $('btnApproveStep1').addEventListener('click', () => {
+      $('step2Section').style.display = '';
+      $('step2Section').scrollIntoView({ behavior: 'smooth' });
+    });
+
+    // ==================== Step2 State & Logic ====================
+    // Tracks server-side refs: [{ index, name }]
+    let serverDetailRefs = [];
+    // Tracks which indexes have generated results
+    let generatedIndexes = new Set();
+
+    $('detailRefs').addEventListener('change', async e => {
+      const newFiles = [];
+      for (const file of e.target.files) {
+        newFiles.push(await fileToBase64Obj(file));
+      }
+      if (newFiles.length === 0) return;
+
+      // Upload batch to server (appends)
+      const res = await fetch('/api/step2/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          files: newFiles.map(f => ({ name: f.name, data: f.data })),
+        }),
+      });
+      const data = await res.json();
+      serverDetailRefs = data.detailRefs || [];
+      renderDetailRefsList();
+      updateStep2Btn();
+      // Clear file input so same files can be re-selected
+      e.target.value = '';
+    });
+
+    function renderDetailRefsList() {
+      const container = $('detailRefsList');
+      container.innerHTML = '';
+      if (serverDetailRefs.length === 0) return;
+
+      for (const ref of serverDetailRefs) {
+        const tag = document.createElement('span');
+        tag.style.cssText = 'display:inline-flex; align-items:center; gap:4px; font-size:12px; background:#f3f4f6; padding:3px 8px; border-radius:4px; margin:0 6px 6px 0;';
+        const done = generatedIndexes.has(ref.index);
+        tag.innerHTML = `${done ? '<span class="check-icon">&#10003;</span>' : ''} ${ref.name} <button style="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:14px;line-height:1;padding:0 2px;" title="删除" data-index="${ref.index}">&times;</button>`;
+        tag.querySelector('button').addEventListener('click', () => deleteDetailRef(ref.index));
+        container.appendChild(tag);
+      }
+    }
+
+    async function deleteDetailRef(index) {
+      try {
+        const res = await fetch(`/api/step2/ref/${index}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        serverDetailRefs = data.detailRefs || [];
+        generatedIndexes.delete(index);
+        renderDetailRefsList();
+        // Also remove from step2 results grid if it exists
+        const card = $(`card-section-${index}`);
+        if (card) card.remove();
+        updateStep2Btn();
+      } catch (err) {
+        showStatus('step2StatusArea', 'error', `删除失败: ${err.message}`);
+      }
+    }
+
+    function updateStep2Btn() {
+      const hasPending = serverDetailRefs.some(r => !generatedIndexes.has(r.index));
+      $('btnGenerateStep2').disabled = !hasPending;
+    }
+
+    $('btnGenerateStep2').addEventListener('click', async () => {
+      $('btnGenerateStep2').disabled = true;
+      const pendingCount = serverDetailRefs.filter(r => !generatedIndexes.has(r.index)).length;
+      showStatus('step2StatusArea', 'info', `<span class="spinner"></span>正在生成 ${pendingCount} 张详情页段落图, 请耐心等待...`);
+
+      try {
+        const res = await fetch('/api/step2/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showStatus('step2StatusArea', 'success', `本次生成 ${data.newCount} 张, 共 ${data.results.length} 张`);
+        // Update generated indexes and render all results
+        for (const r of data.results) {
+          if (r.generated) generatedIndexes.add(r.index);
+        }
+        renderDetailRefsList();
+        renderStep2Results(data.results.filter(r => r.generated));
+        loadHistory();
+      } catch (err) {
+        showStatus('step2StatusArea', 'error', `生成失败: ${err.message}`);
+      } finally {
+        updateStep2Btn();
+      }
+    });
+
+    function renderStep2Results(results) {
+      const grid = $('step2ResultsGrid');
+      $('step2ResultsSection').style.display = '';
+
+      // Append new cards, don't clear existing ones (to support incremental)
+      for (const r of results) {
+        // Remove existing card for this index if present (e.g. from restore)
+        const existing = $(`card-section-${r.index}`);
+        if (existing) existing.remove();
+        grid.appendChild(createStep2Card(r.index, r.name, r.url));
+      }
+    }
+
+    function createStep2Card(index, name, url) {
+      const card = document.createElement('div');
+      card.className = 'result-card';
+      card.id = `card-section-${index}`;
+      const ts = Date.now();
+      card.innerHTML = `
+        <div class="label">段落 ${index + 1}</div>
+        <img src="${url}?t=${ts}" alt="section ${index + 1}" onclick="openModal(this.src)">
+        <button class="btn btn-sm btn-outline" onclick="regenerateStep2(${index})">重新生成</button>
+      `;
+      return card;
+    }
+
+    window.regenerateStep2 = async (index) => {
+      const card = $(`card-section-${index}`);
+      const btn = card.querySelector('button');
+      btn.disabled = true;
+      btn.textContent = '生成中...';
+      try {
+        const res = await fetch('/api/step2/regenerate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ index }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        card.querySelector('img').src = data.url + '?t=' + Date.now();
+        showStatus('step2StatusArea', 'success', `已重新生成: 段落 ${index + 1}`);
+      } catch (err) {
+        showStatus('step2StatusArea', 'error', `重新生成失败: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '重新生成';
+      }
+    };
+
+    // Stitch
+    $('btnStitch').addEventListener('click', async () => {
+      $('btnStitch').disabled = true;
+      showStatus('step2StatusArea', 'info', '<span class="spinner"></span>正在拼接长图...');
+      try {
+        const res = await fetch('/api/step2/stitch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showStatus('step2StatusArea', 'success', '拼接完成!');
+        showFinal(data.url);
+        loadHistory(); // refresh history
+      } catch (err) {
+        showStatus('step2StatusArea', 'error', `拼接失败: ${err.message}`);
+      } finally {
+        $('btnStitch').disabled = false;
+      }
+    });
+
+    function showFinal(url) {
+      $('finalSection').style.display = '';
+      const ts = Date.now();
+      $('finalPreview').innerHTML = `<img src="${url}?t=${ts}" onclick="openModal(this.src)" alt="final">`;
+      $('btnDownload').href = url;
+      $('finalSection').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // ==================== Shared ====================
+    window.openModal = src => {
+      $('modalImg').src = src;
+      $('modal').classList.add('active');
+    };
+    $('modalClose').addEventListener('click', () => $('modal').classList.remove('active'));
+    $('modal').addEventListener('click', e => {
+      if (e.target === $('modal')) $('modal').classList.remove('active');
+    });
+
+    async function fileToBase64Obj(file) {
+      return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name, data: reader.result.split(',')[1] });
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function showPreview(containerId, files) {
+      const container = $(containerId);
+      container.innerHTML = '';
+      for (const f of files) {
+        const img = document.createElement('img');
+        img.src = 'data:image/jpeg;base64,' + f.data;
+        container.appendChild(img);
+      }
+    }
+
+    async function uploadFile(type, fileObj) {
+      await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, file: { name: fileObj.name, data: fileObj.data } }),
+      });
+    }
+
+    function showStatus(areaId, type, html) {
+      $(areaId).innerHTML = `<div class="status ${type}">${html}</div>`;
+    }
+
+    // Init: load current session + history
+    loadCurrentSession().then(() => loadHistory());
+  </script>
+</body>
+</html>
