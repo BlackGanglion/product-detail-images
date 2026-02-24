@@ -34,6 +34,10 @@ async function handleRequest(req, res) {
     return serveFile(res, path.join(ROOT, 'public/index.html'), 'text/html');
   }
 
+  if (req.method === 'GET' && url.pathname === '/resize.html') {
+    return serveFile(res, path.join(ROOT, 'public/resize.html'), 'text/html');
+  }
+
   // Serve session files: /session/{sessionId}/...
   if (req.method === 'GET' && url.pathname.startsWith('/session/')) {
     const parts = url.pathname.slice('/session/'.length).split('/');

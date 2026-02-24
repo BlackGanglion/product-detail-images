@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>详情图宽度调整工具</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    h1 { text-align: center; margin-bottom: 8px; font-size: 24px; }
+    .subtitle { text-align: center; font-size: 14px; color: #6b7280; margin-bottom: 24px; }
+    .section { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .section h2 { font-size: 18px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
+    .btn { padding: 8px 20px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+    .btn-green { background: #16a34a; color: #fff; }
+    .btn-green:hover:not(:disabled) { background: #15803d; }
+    .btn-danger { background: #fff; color: #dc2626; border: 1px solid #dc2626; }
+    .btn-danger:hover:not(:disabled) { background: #fef2f2; }
+    .btn-secondary { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+    .btn-secondary:hover:not(:disabled) { background: #e5e7eb; }
+    .status { margin: 12px 0; padding: 10px; border-radius: 6px; font-size: 14px; }
+    .status.info { background: #eff6ff; color: #1e40af; }
+    .status.error { background: #fef2f2; color: #991b1b; }
+    .status.success { background: #f0fdf4; color: #166534; }
+
+    /* Upload area */
+    .upload-zone {
+      border: 2px dashed #d1d5db;
+      border-radius: 8px;
+      padding: 40px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: #2563eb;
+      background: #eff6ff;
+    }
+    .upload-zone p { font-size: 15px; color: #6b7280; margin-bottom: 12px; }
+    .upload-zone .hint { font-size: 12px; color: #9ca3af; }
+
+    /* Settings row */
+    .settings-row {
+      display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 16px; padding: 12px 16px;
+      background: #fafafa; border-radius: 6px; border: 1px solid #eee;
+    }
+    .settings-row label { font-weight: 600; font-size: 14px; }
+    .settings-row input[type="number"] {
+      padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px;
+      font-size: 14px; width: 100px; text-align: center;
+    }
+    .settings-row .arrow { font-size: 20px; color: #9ca3af; }
+
+    /* Image list */
+    .image-list { display: flex; flex-direction: column; gap: 12px; }
+    .image-item {
+      display: flex; align-items: center; gap: 16px;
+      background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: 12px;
+    }
+    .image-item img {
+      height: 80px; border-radius: 4px; border: 1px solid #ddd; flex-shrink: 0;
+    }
+    .image-info { flex: 1; min-width: 0; }
+    .image-info .name { font-size: 13px; font-weight: 600; margin-bottom: 4px; word-break: break-all; }
+    .image-info .dims { font-size: 12px; color: #6b7280; }
+    .image-info .dims .changed { color: #16a34a; font-weight: 600; }
+    .image-item .remove-btn {
+      background: none; border: none; color: #9ca3af; cursor: pointer;
+      font-size: 20px; line-height: 1; padding: 4px;
+    }
+    .image-item .remove-btn:hover { color: #dc2626; }
+
+    /* Actions bar */
+    .actions-bar {
+      display: flex; gap: 12px; align-items: center; justify-content: center;
+      margin-top: 20px; flex-wrap: wrap;
+    }
+    .actions-bar .count { font-size: 13px; color: #6b7280; }
+
+    /* Progress */
+    .progress-bar {
+      width: 100%; height: 6px; background: #e5e7eb; border-radius: 3px;
+      overflow: hidden; margin: 12px 0; display: none;
+    }
+    .progress-bar .fill {
+      height: 100%; background: #2563eb; border-radius: 3px;
+      transition: width 0.3s;
+    }
+
+    /* Modal */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; }
+    .modal-overlay.active { display: flex; }
+    .modal-overlay img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+    .modal-overlay .close { position: absolute; top: 20px; right: 20px; color: #fff; font-size: 32px; cursor: pointer; }
+
+    /* Back link */
+    .back-link { display: inline-block; margin-bottom: 16px; font-size: 14px; color: #2563eb; text-decoration: none; }
+    .back-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a href="index.html" class="back-link">&larr; 返回主页</a>
+    <h1>详情图宽度调整工具</h1>
+    <p class="subtitle">批量将商品详情图缩放到指定宽度（高度等比缩放），纯浏览器端处理</p>
+
+    <!-- Settings -->
+    <div class="section">
+      <h2>缩放设置</h2>
+      <div class="settings-row">
+        <label>目标宽度:</label>
+        <input type="number" id="targetWidth" value="750" min="1" max="9999">
+        <span style="font-size:13px; color:#6b7280;">px（高度自动等比缩放）</span>
+      </div>
+    </div>
+
+    <!-- Upload -->
+    <div class="section">
+      <h2>上传图片</h2>
+      <div class="upload-zone" id="uploadZone">
+        <p>点击或拖拽图片到此处上传</p>
+        <p class="hint">支持 JPG、PNG、WebP 等格式，可多选</p>
+        <input type="file" id="fileInput" accept="image/*" multiple style="display:none;">
+      </div>
+    </div>
+
+    <!-- Image list -->
+    <div class="section" id="listSection" style="display:none;">
+      <h2>图片列表 <span id="imageCount" style="font-size:14px; color:#6b7280; font-weight:normal;"></span></h2>
+      <div id="statusArea"></div>
+      <div class="progress-bar" id="progressBar"><div class="fill" id="progressFill"></div></div>
+      <div class="image-list" id="imageList"></div>
+      <div class="actions-bar">
+        <button class="btn btn-primary" id="btnProcess">开始处理</button>
+        <button class="btn btn-green" id="btnDownloadAll" style="display:none;">打包下载 (ZIP)</button>
+        <button class="btn btn-danger" id="btnClear">清空全部</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Image Modal -->
+  <div class="modal-overlay" id="modal">
+    <span class="close" id="modalClose">&times;</span>
+    <img id="modalImg" src="" alt="">
+  </div>
+
+  <!-- JSZip from CDN for zip download -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    // State
+    let images = []; // [{ file, name, origW, origH, newW, newH, blob, objectUrl, thumbUrl }]
+
+    // Upload zone
+    const uploadZone = $('uploadZone');
+    const fileInput = $('fileInput');
+
+    uploadZone.addEventListener('click', () => fileInput.click());
+    uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+    uploadZone.addEventListener('drop', e => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      handleFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', e => {
+      handleFiles(e.target.files);
+      e.target.value = '';
+    });
+
+    function handleFiles(fileList) {
+      const newFiles = Array.from(fileList).filter(f => f.type.startsWith('image/'));
+      if (newFiles.length === 0) return;
+
+      let loaded = 0;
+      for (const file of newFiles) {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          images.push({
+            file,
+            name: file.name,
+            origW: img.naturalWidth,
+            origH: img.naturalHeight,
+            newW: null,
+            newH: null,
+            blob: null,
+            objectUrl: null,
+            thumbUrl: url,
+          });
+          loaded++;
+          if (loaded === newFiles.length) {
+            renderList();
+          }
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          loaded++;
+          if (loaded === newFiles.length) renderList();
+        };
+        img.src = url;
+      }
+    }
+
+    function renderList() {
+      const section = $('listSection');
+      const list = $('imageList');
+
+      if (images.length === 0) {
+        section.style.display = 'none';
+        return;
+      }
+
+      section.style.display = '';
+      $('imageCount').textContent = `(${images.length} 张)`;
+      list.innerHTML = '';
+
+      const targetW = getTargetWidth();
+
+      images.forEach((item, idx) => {
+        const ratio = targetW / item.origW;
+        const newH = Math.round(item.origH * ratio);
+
+        const div = document.createElement('div');
+        div.className = 'image-item';
+
+        const displayUrl = item.objectUrl || item.thumbUrl;
+        const dimsHtml = item.blob
+          ? `<span class="dims">${item.origW} × ${item.origH} → <span class="changed">${item.newW} × ${item.newH}</span></span>`
+          : `<span class="dims">${item.origW} × ${item.origH} → ${targetW} × ${newH} (待处理)</span>`;
+
+        div.innerHTML = `
+          <img src="${displayUrl}" alt="${item.name}" onclick="openModal(this.src)">
+          <div class="image-info">
+            <div class="name">${item.name}</div>
+            ${dimsHtml}
+          </div>
+          ${item.blob ? `<a class="btn btn-secondary" href="${item.objectUrl}" download="${item.name}" style="padding:4px 12px; font-size:12px; text-decoration:none;">下载</a>` : ''}
+          <button class="remove-btn" data-idx="${idx}" title="移除">&times;</button>
+        `;
+
+        div.querySelector('.remove-btn').addEventListener('click', () => {
+          removeImage(idx);
+        });
+
+        list.appendChild(div);
+      });
+
+      // Show/hide download all button
+      const allDone = images.length > 0 && images.every(i => i.blob);
+      $('btnDownloadAll').style.display = allDone ? '' : 'none';
+    }
+
+    function removeImage(idx) {
+      const item = images[idx];
+      if (item.thumbUrl) URL.revokeObjectURL(item.thumbUrl);
+      if (item.objectUrl) URL.revokeObjectURL(item.objectUrl);
+      images.splice(idx, 1);
+      renderList();
+    }
+
+    function getTargetWidth() {
+      return parseInt($('targetWidth').value, 10) || 750;
+    }
+
+    // Re-render when target width changes
+    $('targetWidth').addEventListener('change', renderList);
+
+    // Process images
+    $('btnProcess').addEventListener('click', async () => {
+      if (images.length === 0) return;
+
+      const targetW = getTargetWidth();
+      const btn = $('btnProcess');
+      btn.disabled = true;
+      btn.textContent = '处理中...';
+
+      const bar = $('progressBar');
+      const fill = $('progressFill');
+      bar.style.display = '';
+      fill.style.width = '0%';
+      $('statusArea').innerHTML = '';
+
+      let processed = 0;
+      let errors = 0;
+
+      for (let i = 0; i < images.length; i++) {
+        const item = images[i];
+
+        // Skip already processed items at the same target width
+        if (item.blob && item.newW === targetW) {
+          processed++;
+          fill.style.width = (processed / images.length * 100) + '%';
+          continue;
+        }
+
+        try {
+          const result = await resizeImage(item.file, targetW);
+          // Clean up old object URL if re-processing
+          if (item.objectUrl) URL.revokeObjectURL(item.objectUrl);
+
+          item.newW = result.width;
+          item.newH = result.height;
+          item.blob = result.blob;
+          item.objectUrl = URL.createObjectURL(result.blob);
+          processed++;
+        } catch (err) {
+          console.error(`Failed to process ${item.name}:`, err);
+          errors++;
+          processed++;
+        }
+
+        fill.style.width = (processed / images.length * 100) + '%';
+      }
+
+      bar.style.display = 'none';
+      btn.disabled = false;
+      btn.textContent = '开始处理';
+
+      if (errors > 0) {
+        showStatus('error', `处理完成，${errors} 张图片处理失败`);
+      } else {
+        showStatus('success', `全部 ${images.length} 张图片处理完成！`);
+      }
+
+      renderList();
+    });
+
+    function resizeImage(file, targetW) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          const ratio = targetW / img.naturalWidth;
+          const newH = Math.round(img.naturalHeight * ratio);
+
+          const canvas = document.createElement('canvas');
+          canvas.width = targetW;
+          canvas.height = newH;
+
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, targetW, newH);
+          URL.revokeObjectURL(url);
+
+          // Determine output format from file type
+          let mimeType = file.type || 'image/png';
+          // Default quality for JPEG/WebP
+          const quality = mimeType === 'image/png' ? undefined : 0.95;
+
+          canvas.toBlob(blob => {
+            if (blob) {
+              resolve({ width: targetW, height: newH, blob });
+            } else {
+              reject(new Error('Canvas toBlob failed'));
+            }
+          }, mimeType, quality);
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error('Image load failed'));
+        };
+        img.src = url;
+      });
+    }
+
+    // Download all as ZIP
+    $('btnDownloadAll').addEventListener('click', async () => {
+      const btn = $('btnDownloadAll');
+      btn.disabled = true;
+      btn.textContent = '打包中...';
+
+      try {
+        const zip = new JSZip();
+        for (const item of images) {
+          if (item.blob) {
+            zip.file(item.name, item.blob);
+          }
+        }
+        const content = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(content);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'resized-images.zip';
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        showStatus('error', '打包失败: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '打包下载 (ZIP)';
+      }
+    });
+
+    // Clear all
+    $('btnClear').addEventListener('click', () => {
+      for (const item of images) {
+        if (item.thumbUrl) URL.revokeObjectURL(item.thumbUrl);
+        if (item.objectUrl) URL.revokeObjectURL(item.objectUrl);
+      }
+      images = [];
+      $('statusArea').innerHTML = '';
+      renderList();
+    });
+
+    // Modal
+    window.openModal = src => {
+      $('modalImg').src = src;
+      $('modal').classList.add('active');
+    };
+    $('modalClose').addEventListener('click', () => $('modal').classList.remove('active'));
+    $('modal').addEventListener('click', e => {
+      if (e.target === $('modal')) $('modal').classList.remove('active');
+    });
+
+    function showStatus(type, text) {
+      $('statusArea').innerHTML = `<div class="status ${type}">${text}</div>`;
+    }
+  </script>
+</body>
+</html>
