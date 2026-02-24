@@ -132,6 +132,14 @@
     <!-- ==================== Step2 ==================== -->
     <div class="section" id="step2Section" style="display:none;">
       <h2>Step2: 上传详情页参考图</h2>
+      <div style="margin-bottom:12px;">
+        <label style="font-weight:600; font-size:14px; margin-right:12px;">段落类型:</label>
+        <span class="section-type-group" id="sectionTypeGroup">
+          <button class="btn btn-sm btn-primary" data-type="showcase" id="btnTypeShowcase">产品展示</button>
+          <button class="btn btn-sm btn-secondary" data-type="highlight" id="btnTypeHighlight">设计亮点</button>
+        </span>
+        <span style="font-size:12px; color:#6b7280; margin-left:12px;" id="sectionTypeHint">产品展示: 每张参考图自动匹配一个颜色组的模特图</span>
+      </div>
       <div class="upload-row">
         <div class="upload-item">
           <label>详情页参考图 (可分批上传, 每次追加)</label>
@@ -295,6 +303,7 @@
       $('btnGenerateStep2').disabled = true;
       serverDetailRefs = [];
       generatedIndexes = new Set();
+      setSectionType('showcase');
 
       // Reset step2 results
       $('step2ResultsSection').style.display = 'none';
@@ -328,6 +337,7 @@
           if (!isNaN(numPart) && numPart >= groupCounter) groupCounter = numPart + 1;
           groups.push({
             id,
+            label: g.label || null,
             frontFile: g.frontName ? { name: g.frontName } : null,
             backFile: g.backName ? { name: g.backName } : null,
             restoredFront: !!g.frontName,
@@ -361,9 +371,9 @@
         $('step2Section').style.display = '';
       }
 
-      // Restore detail refs and step2 results
+      // Restore detail refs and step2 results (includes sectionType)
       if (data.detailRefs && data.detailRefs.length > 0) {
-        serverDetailRefs = data.detailRefs;
+        serverDetailRefs = data.detailRefs; // [{ index, name, sectionType }]
         // Mark which ones have results
         if (data.step2Results) {
           for (const r of data.step2Results) generatedIndexes.add(r.index);
@@ -595,10 +605,28 @@
     });
 
     // ==================== Step2 State & Logic ====================
-    // Tracks server-side refs: [{ index, name }]
+    // Tracks server-side refs: [{ index, name, sectionType }]
     let serverDetailRefs = [];
     // Tracks which indexes have generated results
     let generatedIndexes = new Set();
+    // Current section type for new uploads
+    let currentSectionType = 'showcase';
+
+    // Section type toggle buttons
+    const SECTION_TYPE_HINTS = {
+      showcase: '产品展示: 每张参考图自动匹配一个颜色组的模特图',
+      highlight: '设计亮点: 展示衣服设计亮点, 收到所有颜色组的模特图',
+    };
+
+    $('btnTypeShowcase').addEventListener('click', () => setSectionType('showcase'));
+    $('btnTypeHighlight').addEventListener('click', () => setSectionType('highlight'));
+
+    function setSectionType(type) {
+      currentSectionType = type;
+      $('btnTypeShowcase').className = 'btn btn-sm ' + (type === 'showcase' ? 'btn-primary' : 'btn-secondary');
+      $('btnTypeHighlight').className = 'btn btn-sm ' + (type === 'highlight' ? 'btn-primary' : 'btn-secondary');
+      $('sectionTypeHint').textContent = SECTION_TYPE_HINTS[type];
+    }
 
     $('detailRefs').addEventListener('change', async e => {
       const newFiles = [];
@@ -613,6 +641,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           files: newFiles.map(f => ({ name: f.name, data: f.data })),
+          sectionType: currentSectionType,
         }),
       });
       const data = await res.json();
@@ -628,11 +657,27 @@
       container.innerHTML = '';
       if (serverDetailRefs.length === 0) return;
 
+      // Build showcase ordinal → group label mapping
+      const showcaseRefs = serverDetailRefs
+        .filter(r => (r.sectionType || 'detail') === 'showcase')
+        .sort((a, b) => a.index - b.index);
+
       for (const ref of serverDetailRefs) {
         const tag = document.createElement('span');
         tag.style.cssText = 'display:inline-flex; align-items:center; gap:4px; font-size:12px; background:#f3f4f6; padding:3px 8px; border-radius:4px; margin:0 6px 6px 0;';
         const done = generatedIndexes.has(ref.index);
-        tag.innerHTML = `${done ? '<span class="check-icon">&#10003;</span>' : ''} ${ref.name} <button style="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:14px;line-height:1;padding:0 2px;" title="删除" data-index="${ref.index}">&times;</button>`;
+        const type = ref.sectionType || 'detail';
+
+        let typeLabel = '';
+        if (type === 'showcase') {
+          const ordinal = showcaseRefs.findIndex(r => r.index === ref.index);
+          const groupLabel = (ordinal >= 0 && ordinal < groups.length) ? groups[ordinal].label || `第${ordinal + 1}组` : `第${ordinal + 1}组`;
+          typeLabel = `<span style="color:#2563eb;font-weight:600;">[展示-${groupLabel}]</span> `;
+        } else {
+          typeLabel = '<span style="color:#d97706;font-weight:600;">[亮点]</span> ';
+        }
+
+        tag.innerHTML = `${done ? '<span class="check-icon">&#10003;</span>' : ''} ${typeLabel}${ref.name} <button style="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:14px;line-height:1;padding:0 2px;" title="删除" data-index="${ref.index}">&times;</button>`;
         tag.querySelector('button').addEventListener('click', () => deleteDetailRef(ref.index));
         container.appendChild(tag);
       }
@@ -709,6 +754,7 @@
       card.innerHTML = `
         <div class="label">段落 ${index + 1}</div>
         <img src="${url}?t=${ts}" alt="section ${index + 1}" onclick="openModal(this.src)">
+        <input type="text" class="adjustment-input" placeholder="调整说明 (可选)" style="width:100%;padding:4px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;margin-bottom:6px;">
         <button class="btn btn-sm btn-outline" onclick="regenerateStep2(${index})">重新生成</button>
       `;
       return card;
@@ -717,13 +763,17 @@
     window.regenerateStep2 = async (index) => {
       const card = $(`card-section-${index}`);
       const btn = card.querySelector('button');
+      const adjustmentInput = card.querySelector('.adjustment-input');
+      const adjustmentPrompt = adjustmentInput ? adjustmentInput.value.trim() : '';
       btn.disabled = true;
       btn.textContent = '生成中...';
       try {
+        const payload = { index };
+        if (adjustmentPrompt) payload.adjustmentPrompt = adjustmentPrompt;
         const res = await fetch('/api/step2/regenerate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ index }),
+          body: JSON.stringify(payload),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);

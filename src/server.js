@@ -114,7 +114,7 @@ function getSessionSummary() {
       front: sessionUrl(`step1/${r.groupId}-front.jpg`),
       back: sessionUrl(`step1/${r.groupId}-back.jpg`),
     })),
-    detailRefs: session.detailRefs.map(r => ({ index: r.index, name: r.name })),
+    detailRefs: session.detailRefs.map(r => ({ index: r.index, name: r.name, sectionType: r.sectionType || 'detail' })),
     step2Results: session.step2Results.map(r => ({
       index: r.index,
       url: sessionUrl(`step2/section-${String(r.index + 1).padStart(2, '0')}.jpg`),
@@ -280,7 +280,7 @@ async function handleRegenerate(req, res) {
 
 async function handleStep2Upload(req, res) {
   const body = await readJsonBody(req);
-  const { files } = body; // [{ name, data }]
+  const { files, sectionType = 'detail' } = body; // sectionType: 'showcase' | 'detail'
 
   const uploadDir = sessionPath('input/detail-refs');
   await fs.mkdir(uploadDir, { recursive: true });
@@ -296,14 +296,14 @@ async function handleStep2Upload(req, res) {
     const label = String(idx + 1).padStart(2, '0');
     const filePath = path.join(uploadDir, `${label}${extFromName(f.name)}`);
     await saveBase64Image(f.data, filePath);
-    session.detailRefs.push({ index: idx, name: f.name, path: filePath });
+    session.detailRefs.push({ index: idx, name: f.name, path: filePath, sectionType });
   }
 
   await saveSession(session.sessionId, session);
   jsonResponse(res, 200, {
     ok: true,
     count: session.detailRefs.length,
-    detailRefs: session.detailRefs.map(r => ({ index: r.index, name: r.name })),
+    detailRefs: session.detailRefs.map(r => ({ index: r.index, name: r.name, sectionType: r.sectionType || 'detail' })),
   });
 }
 
@@ -315,10 +315,11 @@ async function handleStep2Generate(req, res) {
     return jsonResponse(res, 400, { error: '请先完成 Step1 生成' });
   }
 
-  const modelImagePaths = [];
+  // All model images (for detail type)
+  const allModelImagePaths = [];
   for (const r of session.step1Results) {
-    modelImagePaths.push(r.front);
-    modelImagePaths.push(r.back);
+    allModelImagePaths.push(r.front);
+    allModelImagePaths.push(r.back);
   }
 
   // Only generate for refs that don't have results yet
@@ -330,11 +331,14 @@ async function handleStep2Generate(req, res) {
   }
 
   const step2Dir = sessionPath('step2');
-  console.log(`\nStarting Step2 generation: ${pending.length} pending sections (${session.detailRefs.length} total), ${modelImagePaths.length} model images`);
+  console.log(`\nStarting Step2 generation: ${pending.length} pending sections (${session.detailRefs.length} total), ${allModelImagePaths.length} model images`);
 
   const results = [];
 
   for (const ref of pending) {
+    // Determine which model images to pass based on sectionType
+    const modelImagePaths = getModelImagesForRef(ref, allModelImagePaths);
+
     const outputPath = await generateSection({
       refImagePath: ref.path,
       modelImagePaths,
@@ -367,16 +371,19 @@ async function handleStep2Generate(req, res) {
 
 async function handleStep2Regenerate(req, res) {
   const body = await readJsonBody(req);
-  const { index } = body;
+  const { index, adjustmentPrompt } = body;
 
   const ref = session.detailRefs.find(r => r.index === index);
   if (!ref) return jsonResponse(res, 400, { error: `Section ${index} not found.` });
 
-  const modelImagePaths = [];
+  const allModelImagePaths = [];
   for (const r of session.step1Results) {
-    modelImagePaths.push(r.front);
-    modelImagePaths.push(r.back);
+    allModelImagePaths.push(r.front);
+    allModelImagePaths.push(r.back);
   }
+
+  // Use same sectionType-based routing as generate
+  const modelImagePaths = getModelImagesForRef(ref, allModelImagePaths);
 
   const step2Dir = sessionPath('step2');
   const outputPath = await generateSection({
@@ -384,6 +391,7 @@ async function handleStep2Regenerate(req, res) {
     modelImagePaths,
     index: ref.index,
     outputDir: step2Dir,
+    adjustmentPrompt,
   });
 
   const existing = session.step2Results.find(r => r.index === index);
@@ -416,7 +424,7 @@ async function handleStep2DeleteRef(index, res) {
   await saveSession(session.sessionId, session);
   jsonResponse(res, 200, {
     ok: true,
-    detailRefs: session.detailRefs.map(r => ({ index: r.index, name: r.name })),
+    detailRefs: session.detailRefs.map(r => ({ index: r.index, name: r.name, sectionType: r.sectionType || 'detail' })),
   });
 }
 
@@ -436,6 +444,41 @@ async function handleStitch(req, res) {
   await saveSession(session.sessionId, session);
 
   jsonResponse(res, 200, { url: sessionUrl('final/detail-page.jpg') });
+}
+
+// ==================== Step2 Model Image Routing ====================
+
+/**
+ * Determine which model images to pass for a given ref based on its sectionType.
+ * - 'showcase': match ref's ordinal position among showcase refs → corresponding color group
+ * - 'detail': pass all model images (existing behavior)
+ */
+function getModelImagesForRef(ref, allModelImagePaths) {
+  const sectionType = ref.sectionType || 'detail';
+
+  if (sectionType === 'showcase') {
+    // Find this ref's ordinal position among all showcase refs (sorted by index)
+    const showcaseRefs = session.detailRefs
+      .filter(r => (r.sectionType || 'detail') === 'showcase')
+      .sort((a, b) => a.index - b.index);
+    const ordinal = showcaseRefs.findIndex(r => r.index === ref.index);
+
+    if (ordinal >= 0 && ordinal < session.step1Results.length) {
+      const group = session.step1Results[ordinal];
+      return [group.front, group.back];
+    }
+    // Fallback: if ordinal exceeds available groups, use all
+    return allModelImagePaths;
+  }
+
+  if (sectionType === 'highlight') {
+    const first = session.step1Results[0];
+    if (first) return [first.front, first.back];
+    return allModelImagePaths;
+  }
+
+  // unknown: pass all model images
+  return allModelImagePaths;
 }
 
 // ==================== Helpers ====================

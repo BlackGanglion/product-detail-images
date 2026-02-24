@@ -14,7 +14,7 @@ import { fileToBase64, mimeType, saveBase64Image } from '../utils/image.js';
  * @param {number} params.index - Section index (for naming)
  * @returns {Promise<string>} - Output file path
  */
-export async function generateSection({ refImagePath, modelImagePaths, index, outputDir }) {
+export async function generateSection({ refImagePath, modelImagePaths, index, outputDir, adjustmentPrompt }) {
   const label = String(index + 1).padStart(2, '0');
 
   console.log(`  [section-${label}] Generating...`);
@@ -35,7 +35,12 @@ export async function generateSection({ refImagePath, modelImagePaths, index, ou
     });
   }
 
-  const imageData = await generateImage(detailPagePrompt(), images);
+  let prompt = detailPagePrompt();
+  if (adjustmentPrompt) {
+    prompt += `\n\nAdditional adjustment: ${adjustmentPrompt}`;
+  }
+
+  const imageData = await generateImage(prompt, images);
   const outputPath = path.join(outputDir, `section-${label}.jpg`);
   await saveBase64Image(imageData, outputPath);
   console.log(`  [section-${label}] Saved: ${outputPath}`);
