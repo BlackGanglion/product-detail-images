@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url';
 import config from '../config/default.js';
 import { generateAllGroups, regenerateSingle } from './generator/modelImage.js';
 import { generateSection, stitchSections } from './composer/detailPage.js';
+import { generateRetouch, generateAllRetouches } from './generator/retouchImage.js';
+import { generateClothingDetail, generateAllClothingDetails } from './generator/clothingDetailImage.js';
 import { saveBase64Image } from './utils/image.js';
 import {
   createSession, saveSession, loadSession,
@@ -14,8 +16,10 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 
-// Current active session
-let session = null;
+// Active sessions — isolated per page type
+let session = null;               // detail page
+let retouchSession = null;        // retouch page
+let clothingDetailSession = null; // clothing detail page
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -38,6 +42,14 @@ async function handleRequest(req, res) {
     return serveFile(res, path.join(ROOT, 'public/resize.html'), 'text/html');
   }
 
+  if (req.method === 'GET' && url.pathname === '/retouch.html') {
+    return serveFile(res, path.join(ROOT, 'public/retouch.html'), 'text/html');
+  }
+
+  if (req.method === 'GET' && url.pathname === '/clothing-detail.html') {
+    return serveFile(res, path.join(ROOT, 'public/clothing-detail.html'), 'text/html');
+  }
+
   // Serve session files: /session/{sessionId}/...
   if (req.method === 'GET' && url.pathname.startsWith('/session/')) {
     const parts = url.pathname.slice('/session/'.length).split('/');
@@ -54,22 +66,24 @@ async function handleRequest(req, res) {
     }
   }
 
-  // --- Session / History APIs ---
+  // --- Session / History APIs (type-aware via ?type=detail|retouch) ---
   if (req.method === 'GET' && url.pathname === '/api/session') {
-    return jsonResponse(res, 200, getSessionSummary());
+    const type = url.searchParams.get('type') || 'detail';
+    return jsonResponse(res, 200, getSessionSummary(type));
   }
   if (req.method === 'POST' && url.pathname === '/api/session/new') {
     return handleNewSession(req, res);
   }
   if (req.method === 'GET' && url.pathname === '/api/history') {
-    return handleListHistory(req, res);
+    const type = url.searchParams.get('type') || 'detail';
+    return handleListHistory(type, res);
   }
   if (req.method === 'POST' && url.pathname === '/api/history/restore') {
     return handleRestoreSession(req, res);
   }
   if (req.method === 'DELETE' && url.pathname.startsWith('/api/history/')) {
     const id = url.pathname.slice('/api/history/'.length);
-    return handleDeleteSession(id, res);
+    return handleDeleteSession(req, id, res);
   }
 
   // --- Step1 APIs ---
@@ -87,6 +101,32 @@ async function handleRequest(req, res) {
     return handleStep2DeleteRef(index, res);
   }
 
+  // --- Retouch APIs ---
+  if (req.method === 'POST' && url.pathname === '/api/retouch/upload') return handleRetouchUpload(req, res);
+  if (req.method === 'POST' && url.pathname === '/api/retouch/generate') return handleRetouchGenerate(req, res);
+  if (req.method === 'POST' && url.pathname === '/api/retouch/regenerate') return handleRetouchRegenerate(req, res);
+  if (req.method === 'DELETE' && url.pathname.startsWith('/api/retouch/model-ref/')) {
+    const index = parseInt(url.pathname.slice('/api/retouch/model-ref/'.length), 10);
+    return handleRetouchDeleteModelRef(index, res);
+  }
+  if (req.method === 'DELETE' && url.pathname.startsWith('/api/retouch/clothing-ref/')) {
+    const index = parseInt(url.pathname.slice('/api/retouch/clothing-ref/'.length), 10);
+    return handleRetouchDeleteClothingRef(index, res);
+  }
+
+  // --- Clothing Detail APIs ---
+  if (req.method === 'POST' && url.pathname === '/api/clothing-detail/upload') return handleCDUpload(req, res);
+  if (req.method === 'POST' && url.pathname === '/api/clothing-detail/generate') return handleCDGenerate(req, res);
+  if (req.method === 'POST' && url.pathname === '/api/clothing-detail/regenerate') return handleCDRegenerate(req, res);
+  if (req.method === 'DELETE' && url.pathname.startsWith('/api/clothing-detail/detail-ref/')) {
+    const index = parseInt(url.pathname.slice('/api/clothing-detail/detail-ref/'.length), 10);
+    return handleCDDeleteDetailRef(index, res);
+  }
+  if (req.method === 'DELETE' && url.pathname.startsWith('/api/clothing-detail/clothing-ref/')) {
+    const index = parseInt(url.pathname.slice('/api/clothing-detail/clothing-ref/'.length), 10);
+    return handleCDDeleteClothingRef(index, res);
+  }
+
   jsonResponse(res, 404, { error: 'Not found' });
 }
 
@@ -100,26 +140,75 @@ function sessionPath(relativePath) {
   return path.join(getSessionDir(session.sessionId), relativePath);
 }
 
-function getSessionSummary() {
-  if (!session) return { sessionId: null };
+function retouchSessionUrl(relativePath) {
+  return `/session/${retouchSession.sessionId}/${relativePath}`;
+}
+
+function retouchSessionPath(relativePath) {
+  return path.join(getSessionDir(retouchSession.sessionId), relativePath);
+}
+
+function cdSessionUrl(relativePath) {
+  return `/session/${clothingDetailSession.sessionId}/${relativePath}`;
+}
+
+function cdSessionPath(relativePath) {
+  return path.join(getSessionDir(clothingDetailSession.sessionId), relativePath);
+}
+
+function getSessionSummary(type = 'detail') {
+  if (type === 'clothingDetail') {
+    if (!clothingDetailSession) return { sessionId: null, type: 'clothingDetail' };
+    return {
+      sessionId: clothingDetailSession.sessionId,
+      type: 'clothingDetail',
+      status: clothingDetailSession.status,
+      createdAt: clothingDetailSession.createdAt,
+      cdDetailRefs: (clothingDetailSession.cdDetailRefs || []).map(r => ({ index: r.index, name: r.name })),
+      cdClothingRefs: (clothingDetailSession.cdClothingRefs || []).map(r => ({ index: r.index, name: r.name })),
+      cdResults: (clothingDetailSession.cdResults || []).map(r => ({
+        index: r.index,
+        url: cdSessionUrl(`clothing-detail/result-${String(r.index + 1).padStart(2, '0')}.jpg`),
+      })),
+      cdNotes: clothingDetailSession.cdNotes || '',
+    };
+  }
+  if (type === 'retouch') {
+    if (!retouchSession) return { sessionId: null, type: 'retouch' };
+    return {
+      sessionId: retouchSession.sessionId,
+      type: 'retouch',
+      status: retouchSession.status,
+      createdAt: retouchSession.createdAt,
+      retouchModelRefs: (retouchSession.retouchModelRefs || []).map(r => ({ index: r.index, name: r.name })),
+      retouchClothingRefs: (retouchSession.retouchClothingRefs || []).map(r => ({ index: r.index, name: r.name })),
+      retouchResults: (retouchSession.retouchResults || []).map(r => ({
+        index: r.index,
+        url: retouchSessionUrl(`retouch/result-${String(r.index + 1).padStart(2, '0')}.jpg`),
+      })),
+      retouchNotes: retouchSession.retouchNotes || '',
+    };
+  }
+  if (!session) return { sessionId: null, type: 'detail' };
   return {
     sessionId: session.sessionId,
+    type: 'detail',
     status: session.status,
     createdAt: session.createdAt,
     modelFront: session.modelFront?.name || null,
     modelBack: session.modelBack?.name || null,
-    clothesGroups: session.clothesGroups.map(g => ({
+    clothesGroups: (session.clothesGroups || []).map(g => ({
       groupId: g.groupId, label: g.label,
       frontName: g.frontName || null, backName: g.backName || null,
     })),
     additionalNotes: session.additionalNotes || '',
-    step1Results: session.step1Results.map(r => ({
+    step1Results: (session.step1Results || []).map(r => ({
       groupId: r.groupId,
       front: sessionUrl(`step1/${r.groupId}-front.jpg`),
       back: sessionUrl(`step1/${r.groupId}-back.jpg`),
     })),
-    detailRefs: session.detailRefs.map(r => ({ index: r.index, name: r.name, sectionType: r.sectionType || 'detail' })),
-    step2Results: session.step2Results.map(r => ({
+    detailRefs: (session.detailRefs || []).map(r => ({ index: r.index, name: r.name, sectionType: r.sectionType || 'detail' })),
+    step2Results: (session.step2Results || []).map(r => ({
       index: r.index,
       url: sessionUrl(`step2/section-${String(r.index + 1).padStart(2, '0')}.jpg`),
     })),
@@ -130,36 +219,69 @@ function getSessionSummary() {
 // ==================== Session / History Handlers ====================
 
 async function handleNewSession(req, res) {
-  session = await createSession();
-  console.log(`New session created: ${session.sessionId}`);
-  jsonResponse(res, 200, getSessionSummary());
+  const body = await readJsonBody(req);
+  const type = body.type || 'detail';
+  if (type === 'clothingDetail') {
+    clothingDetailSession = await createSession('clothingDetail');
+    console.log(`New clothingDetail session created: ${clothingDetailSession.sessionId}`);
+  } else if (type === 'retouch') {
+    retouchSession = await createSession('retouch');
+    console.log(`New retouch session created: ${retouchSession.sessionId}`);
+  } else {
+    session = await createSession('detail');
+    console.log(`New detail session created: ${session.sessionId}`);
+  }
+  jsonResponse(res, 200, getSessionSummary(type));
 }
 
-async function handleListHistory(req, res) {
-  const list = await listSessions();
+async function handleListHistory(type, res) {
+  const list = await listSessions(type);
   jsonResponse(res, 200, { sessions: list });
 }
 
 async function handleRestoreSession(req, res) {
   const body = await readJsonBody(req);
-  const { sessionId } = body;
+  const { sessionId, type } = body;
   try {
-    session = await loadSession(sessionId);
-    console.log(`Session restored: ${sessionId}`);
-    jsonResponse(res, 200, getSessionSummary());
+    const loaded = await loadSession(sessionId);
+    const sessionType = type || loaded.type || 'detail';
+    if (sessionType === 'clothingDetail') {
+      clothingDetailSession = loaded;
+      console.log(`ClothingDetail session restored: ${sessionId}`);
+    } else if (sessionType === 'retouch') {
+      retouchSession = loaded;
+      console.log(`Retouch session restored: ${sessionId}`);
+    } else {
+      session = loaded;
+      console.log(`Detail session restored: ${sessionId}`);
+    }
+    jsonResponse(res, 200, getSessionSummary(sessionType));
   } catch (err) {
     jsonResponse(res, 404, { error: `Session not found: ${sessionId}` });
   }
 }
 
-async function handleDeleteSession(sessionId, res) {
+async function handleDeleteSession(req, sessionId, res) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const type = url.searchParams.get('type') || 'detail';
   try {
     await deleteSession(sessionId);
-    // If we deleted the active session, create a new one
-    if (session && session.sessionId === sessionId) {
-      session = await createSession();
+    if (type === 'clothingDetail') {
+      if (clothingDetailSession && clothingDetailSession.sessionId === sessionId) {
+        clothingDetailSession = await createSession('clothingDetail');
+      }
+      jsonResponse(res, 200, { ok: true, activeSessionId: clothingDetailSession?.sessionId });
+    } else if (type === 'retouch') {
+      if (retouchSession && retouchSession.sessionId === sessionId) {
+        retouchSession = await createSession('retouch');
+      }
+      jsonResponse(res, 200, { ok: true, activeSessionId: retouchSession?.sessionId });
+    } else {
+      if (session && session.sessionId === sessionId) {
+        session = await createSession('detail');
+      }
+      jsonResponse(res, 200, { ok: true, activeSessionId: session?.sessionId });
     }
-    jsonResponse(res, 200, { ok: true, activeSessionId: session.sessionId });
   } catch (err) {
     jsonResponse(res, 500, { error: err.message });
   }
@@ -485,6 +607,341 @@ function getModelImagesForRef(ref, allModelImagePaths) {
   return allModelImagePaths;
 }
 
+// ==================== Retouch Handlers ====================
+
+async function handleRetouchUpload(req, res) {
+  const body = await readJsonBody(req);
+  const { type } = body;
+  const s = retouchSession;
+
+  const uploadDir = retouchSessionPath('input/retouch');
+  await fs.mkdir(uploadDir, { recursive: true });
+
+  if (type === 'modelRef' && body.files) {
+    // Batch upload model reference images
+    const refs = s.retouchModelRefs || [];
+    const startIndex = refs.length > 0 ? Math.max(...refs.map(r => r.index)) + 1 : 0;
+
+    for (let i = 0; i < body.files.length; i++) {
+      const idx = startIndex + i;
+      const f = body.files[i];
+      const label = String(idx + 1).padStart(2, '0');
+      const filePath = path.join(uploadDir, `model-ref-${label}${extFromName(f.name)}`);
+      await saveBase64Image(f.data, filePath);
+      refs.push({ index: idx, name: f.name, path: filePath });
+    }
+    s.retouchModelRefs = refs;
+  } else if (type === 'clothingRef' && body.files) {
+    const refs = s.retouchClothingRefs || [];
+    const startIndex = refs.length > 0 ? Math.max(...refs.map(r => r.index)) + 1 : 0;
+
+    for (let i = 0; i < body.files.length; i++) {
+      const idx = startIndex + i;
+      const f = body.files[i];
+      const label = String(idx + 1).padStart(2, '0');
+      const filePath = path.join(uploadDir, `clothing-${label}${extFromName(f.name)}`);
+      await saveBase64Image(f.data, filePath);
+      refs.push({ index: idx, name: f.name, path: filePath });
+    }
+    s.retouchClothingRefs = refs;
+  }
+
+  await saveSession(s.sessionId, s);
+  jsonResponse(res, 200, {
+    ok: true,
+    retouchModelRefs: (s.retouchModelRefs || []).map(r => ({ index: r.index, name: r.name })),
+    retouchClothingRefs: (s.retouchClothingRefs || []).map(r => ({ index: r.index, name: r.name })),
+  });
+}
+
+async function handleRetouchGenerate(req, res) {
+  const body = await readJsonBody(req);
+  const s = retouchSession;
+  if (body.additionalNotes !== undefined) {
+    s.retouchNotes = body.additionalNotes;
+  }
+
+  if (!s.retouchModelRefs || s.retouchModelRefs.length === 0) {
+    return jsonResponse(res, 400, { error: '请先上传模特参考图' });
+  }
+  if (!s.retouchClothingRefs || s.retouchClothingRefs.length === 0) {
+    return jsonResponse(res, 400, { error: '请至少上传一张实际穿着图' });
+  }
+
+  // Pending = model refs without results yet
+  const doneIndexes = new Set((s.retouchResults || []).map(r => r.index));
+  const pending = s.retouchModelRefs.filter(r => !doneIndexes.has(r.index));
+
+  if (pending.length === 0) {
+    return jsonResponse(res, 400, { error: '所有模特图都已生成, 请上传新的模特参考图或重新生成单张' });
+  }
+
+  const retouchDir = retouchSessionPath('retouch');
+  const clothingRefPaths = s.retouchClothingRefs.map(r => r.path);
+  console.log(`\nStarting retouch generation: ${pending.length} pending model refs, ${clothingRefPaths.length} clothing refs`);
+
+  const results = await generateAllRetouches({
+    modelRefs: pending,
+    clothingRefPaths,
+    additionalNotes: s.retouchNotes,
+    outputDir: retouchDir,
+  });
+
+  s.retouchResults = [...(s.retouchResults || []), ...results];
+  await saveSession(s.sessionId, s);
+
+  // Return results indexed by model ref
+  const allResults = s.retouchModelRefs.map(ref => {
+    const r = s.retouchResults.find(x => x.index === ref.index);
+    return {
+      index: ref.index,
+      name: ref.name,
+      url: r ? retouchSessionUrl(`retouch/result-${String(ref.index + 1).padStart(2, '0')}.jpg`) : null,
+      generated: !!r,
+    };
+  });
+  jsonResponse(res, 200, { results: allResults, newCount: results.length });
+}
+
+async function handleRetouchRegenerate(req, res) {
+  const body = await readJsonBody(req);
+  const { index, adjustmentPrompt } = body;
+  const s = retouchSession;
+
+  // index is now model ref index
+  const ref = (s.retouchModelRefs || []).find(r => r.index === index);
+  if (!ref) return jsonResponse(res, 400, { error: `Model ref ${index} not found.` });
+  if (!s.retouchClothingRefs || s.retouchClothingRefs.length === 0) {
+    return jsonResponse(res, 400, { error: '没有穿着图可用' });
+  }
+
+  const retouchDir = retouchSessionPath('retouch');
+  const clothingRefPaths = s.retouchClothingRefs.map(r => r.path);
+  const outputPath = await generateRetouch({
+    modelRefPath: ref.path,
+    clothingRefPaths,
+    additionalNotes: s.retouchNotes,
+    adjustmentPrompt,
+    outputDir: retouchDir,
+    index: ref.index,
+  });
+
+  const existing = (s.retouchResults || []).find(r => r.index === index);
+  if (existing) {
+    existing.path = outputPath;
+  } else {
+    s.retouchResults = [...(s.retouchResults || []), { index, path: outputPath }];
+  }
+
+  await saveSession(s.sessionId, s);
+  const label = String(index + 1).padStart(2, '0');
+  jsonResponse(res, 200, { index, url: retouchSessionUrl(`retouch/result-${label}.jpg`) });
+}
+
+async function handleRetouchDeleteModelRef(index, res) {
+  const s = retouchSession;
+  const ref = (s.retouchModelRefs || []).find(r => r.index === index);
+  if (!ref) return jsonResponse(res, 400, { error: `Model ref ${index} not found.` });
+
+  // Remove model ref and its corresponding result
+  s.retouchModelRefs = s.retouchModelRefs.filter(r => r.index !== index);
+  s.retouchResults = (s.retouchResults || []).filter(r => r.index !== index);
+
+  try { await fs.unlink(ref.path); } catch {}
+  try {
+    const label = String(index + 1).padStart(2, '0');
+    await fs.unlink(retouchSessionPath(`retouch/result-${label}.jpg`));
+  } catch {}
+
+  await saveSession(s.sessionId, s);
+  jsonResponse(res, 200, {
+    ok: true,
+    retouchModelRefs: s.retouchModelRefs.map(r => ({ index: r.index, name: r.name })),
+  });
+}
+
+async function handleRetouchDeleteClothingRef(index, res) {
+  const s = retouchSession;
+  const ref = (s.retouchClothingRefs || []).find(r => r.index === index);
+  if (!ref) return jsonResponse(res, 400, { error: `Clothing ref ${index} not found.` });
+
+  // Remove clothing ref only — keep existing results (user can manually regenerate)
+  s.retouchClothingRefs = s.retouchClothingRefs.filter(r => r.index !== index);
+
+  try { await fs.unlink(ref.path); } catch {}
+
+  await saveSession(s.sessionId, s);
+  jsonResponse(res, 200, {
+    ok: true,
+    retouchClothingRefs: s.retouchClothingRefs.map(r => ({ index: r.index, name: r.name })),
+  });
+}
+
+// ==================== Clothing Detail Handlers ====================
+
+async function handleCDUpload(req, res) {
+  const body = await readJsonBody(req);
+  const { type } = body;
+  const s = clothingDetailSession;
+
+  const uploadDir = cdSessionPath('input/clothing-detail');
+  await fs.mkdir(uploadDir, { recursive: true });
+
+  if (type === 'detailRef' && body.files) {
+    const refs = s.cdDetailRefs || [];
+    const startIndex = refs.length > 0 ? Math.max(...refs.map(r => r.index)) + 1 : 0;
+
+    for (let i = 0; i < body.files.length; i++) {
+      const idx = startIndex + i;
+      const f = body.files[i];
+      const label = String(idx + 1).padStart(2, '0');
+      const filePath = path.join(uploadDir, `detail-ref-${label}${extFromName(f.name)}`);
+      await saveBase64Image(f.data, filePath);
+      refs.push({ index: idx, name: f.name, path: filePath });
+    }
+    s.cdDetailRefs = refs;
+  } else if (type === 'clothingRef' && body.files) {
+    const refs = s.cdClothingRefs || [];
+    const startIndex = refs.length > 0 ? Math.max(...refs.map(r => r.index)) + 1 : 0;
+
+    for (let i = 0; i < body.files.length; i++) {
+      const idx = startIndex + i;
+      const f = body.files[i];
+      const label = String(idx + 1).padStart(2, '0');
+      const filePath = path.join(uploadDir, `clothing-${label}${extFromName(f.name)}`);
+      await saveBase64Image(f.data, filePath);
+      refs.push({ index: idx, name: f.name, path: filePath });
+    }
+    s.cdClothingRefs = refs;
+  }
+
+  await saveSession(s.sessionId, s);
+  jsonResponse(res, 200, {
+    ok: true,
+    cdDetailRefs: (s.cdDetailRefs || []).map(r => ({ index: r.index, name: r.name })),
+    cdClothingRefs: (s.cdClothingRefs || []).map(r => ({ index: r.index, name: r.name })),
+  });
+}
+
+async function handleCDGenerate(req, res) {
+  const body = await readJsonBody(req);
+  const s = clothingDetailSession;
+  if (body.additionalNotes !== undefined) {
+    s.cdNotes = body.additionalNotes;
+  }
+
+  if (!s.cdDetailRefs || s.cdDetailRefs.length === 0) {
+    return jsonResponse(res, 400, { error: '请先上传细节参考图' });
+  }
+  if (!s.cdClothingRefs || s.cdClothingRefs.length === 0) {
+    return jsonResponse(res, 400, { error: '请至少上传一张替换衣服图' });
+  }
+
+  // Pending = detail refs without results yet
+  const doneIndexes = new Set((s.cdResults || []).map(r => r.index));
+  const pending = s.cdDetailRefs.filter(r => !doneIndexes.has(r.index));
+
+  if (pending.length === 0) {
+    return jsonResponse(res, 400, { error: '所有细节参考图都已生成, 请上传新的参考图或重新生成单张' });
+  }
+
+  const outputDir = cdSessionPath('clothing-detail');
+  const clothingRefPaths = s.cdClothingRefs.map(r => r.path);
+  console.log(`\nStarting clothing detail generation: ${pending.length} pending detail refs, ${clothingRefPaths.length} clothing refs`);
+
+  const results = await generateAllClothingDetails({
+    detailRefs: pending,
+    clothingRefPaths,
+    additionalNotes: s.cdNotes,
+    outputDir,
+  });
+
+  s.cdResults = [...(s.cdResults || []), ...results];
+  await saveSession(s.sessionId, s);
+
+  const allResults = s.cdDetailRefs.map(ref => {
+    const r = s.cdResults.find(x => x.index === ref.index);
+    return {
+      index: ref.index,
+      name: ref.name,
+      url: r ? cdSessionUrl(`clothing-detail/result-${String(ref.index + 1).padStart(2, '0')}.jpg`) : null,
+      generated: !!r,
+    };
+  });
+  jsonResponse(res, 200, { results: allResults, newCount: results.length });
+}
+
+async function handleCDRegenerate(req, res) {
+  const body = await readJsonBody(req);
+  const { index, adjustmentPrompt } = body;
+  const s = clothingDetailSession;
+
+  const ref = (s.cdDetailRefs || []).find(r => r.index === index);
+  if (!ref) return jsonResponse(res, 400, { error: `Detail ref ${index} not found.` });
+  if (!s.cdClothingRefs || s.cdClothingRefs.length === 0) {
+    return jsonResponse(res, 400, { error: '没有替换衣服图可用' });
+  }
+
+  const outputDir = cdSessionPath('clothing-detail');
+  const clothingRefPaths = s.cdClothingRefs.map(r => r.path);
+  const outputPath = await generateClothingDetail({
+    detailRefPath: ref.path,
+    clothingRefPaths,
+    additionalNotes: s.cdNotes,
+    adjustmentPrompt,
+    outputDir,
+    index: ref.index,
+  });
+
+  const existing = (s.cdResults || []).find(r => r.index === index);
+  if (existing) {
+    existing.path = outputPath;
+  } else {
+    s.cdResults = [...(s.cdResults || []), { index, path: outputPath }];
+  }
+
+  await saveSession(s.sessionId, s);
+  const label = String(index + 1).padStart(2, '0');
+  jsonResponse(res, 200, { index, url: cdSessionUrl(`clothing-detail/result-${label}.jpg`) });
+}
+
+async function handleCDDeleteDetailRef(index, res) {
+  const s = clothingDetailSession;
+  const ref = (s.cdDetailRefs || []).find(r => r.index === index);
+  if (!ref) return jsonResponse(res, 400, { error: `Detail ref ${index} not found.` });
+
+  s.cdDetailRefs = s.cdDetailRefs.filter(r => r.index !== index);
+  s.cdResults = (s.cdResults || []).filter(r => r.index !== index);
+
+  try { await fs.unlink(ref.path); } catch {}
+  try {
+    const label = String(index + 1).padStart(2, '0');
+    await fs.unlink(cdSessionPath(`clothing-detail/result-${label}.jpg`));
+  } catch {}
+
+  await saveSession(s.sessionId, s);
+  jsonResponse(res, 200, {
+    ok: true,
+    cdDetailRefs: s.cdDetailRefs.map(r => ({ index: r.index, name: r.name })),
+  });
+}
+
+async function handleCDDeleteClothingRef(index, res) {
+  const s = clothingDetailSession;
+  const ref = (s.cdClothingRefs || []).find(r => r.index === index);
+  if (!ref) return jsonResponse(res, 400, { error: `Clothing ref ${index} not found.` });
+
+  s.cdClothingRefs = s.cdClothingRefs.filter(r => r.index !== index);
+
+  try { await fs.unlink(ref.path); } catch {}
+
+  await saveSession(s.sessionId, s);
+  jsonResponse(res, 200, {
+    ok: true,
+    cdClothingRefs: s.cdClothingRefs.map(r => ({ index: r.index, name: r.name })),
+  });
+}
+
 // ==================== Helpers ====================
 
 async function readJsonBody(req) {
@@ -521,19 +978,49 @@ function extFromName(name) {
 // ==================== Startup ====================
 
 async function init() {
-  // Try to load the most recent session, otherwise create a new one
-  const sessions = await listSessions();
-  if (sessions.length > 0) {
+  // Load or create detail session
+  const detailSessions = await listSessions('detail');
+  if (detailSessions.length > 0) {
     try {
-      session = await loadSession(sessions[0].sessionId);
-      console.log(`Resumed session: ${session.sessionId} (status: ${session.status})`);
+      session = await loadSession(detailSessions[0].sessionId);
+      console.log(`Resumed detail session: ${session.sessionId} (status: ${session.status})`);
     } catch {
-      session = await createSession();
-      console.log(`Created new session: ${session.sessionId}`);
+      session = await createSession('detail');
+      console.log(`Created new detail session: ${session.sessionId}`);
     }
   } else {
-    session = await createSession();
-    console.log(`Created new session: ${session.sessionId}`);
+    session = await createSession('detail');
+    console.log(`Created new detail session: ${session.sessionId}`);
+  }
+
+  // Load or create retouch session
+  const retouchSessions = await listSessions('retouch');
+  if (retouchSessions.length > 0) {
+    try {
+      retouchSession = await loadSession(retouchSessions[0].sessionId);
+      console.log(`Resumed retouch session: ${retouchSession.sessionId} (status: ${retouchSession.status})`);
+    } catch {
+      retouchSession = await createSession('retouch');
+      console.log(`Created new retouch session: ${retouchSession.sessionId}`);
+    }
+  } else {
+    retouchSession = await createSession('retouch');
+    console.log(`Created new retouch session: ${retouchSession.sessionId}`);
+  }
+
+  // Load or create clothingDetail session
+  const cdSessions = await listSessions('clothingDetail');
+  if (cdSessions.length > 0) {
+    try {
+      clothingDetailSession = await loadSession(cdSessions[0].sessionId);
+      console.log(`Resumed clothingDetail session: ${clothingDetailSession.sessionId} (status: ${clothingDetailSession.status})`);
+    } catch {
+      clothingDetailSession = await createSession('clothingDetail');
+      console.log(`Created new clothingDetail session: ${clothingDetailSession.sessionId}`);
+    }
+  } else {
+    clothingDetailSession = await createSession('clothingDetail');
+    console.log(`Created new clothingDetail session: ${clothingDetailSession.sessionId}`);
   }
 }
 

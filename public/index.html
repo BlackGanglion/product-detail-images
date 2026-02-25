@@ -80,6 +80,11 @@
 <body>
   <div class="container">
     <h1>电商详情页图片生成工具</h1>
+    <div style="text-align:center;margin-bottom:16px;">
+      <a href="/retouch.html" style="color:#2563eb;text-decoration:none;font-size:14px;">精修图 (换装生成工具) &rarr;</a>
+      &nbsp;&nbsp;|&nbsp;&nbsp;
+      <a href="/clothing-detail.html" style="color:#2563eb;text-decoration:none;font-size:14px;">细节图替换工具 &rarr;</a>
+    </div>
 
     <!-- ==================== History Panel ==================== -->
     <div class="history-panel">
@@ -265,7 +270,11 @@
 
     $('btnNewSession').addEventListener('click', async () => {
       try {
-        const res = await fetch('/api/session/new', { method: 'POST' });
+        const res = await fetch('/api/session/new', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'detail' }),
+        });
         const data = await res.json();
         applySessionState(data);
         loadHistory();

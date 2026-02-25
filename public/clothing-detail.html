@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>细节图替换工具</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    h1 { text-align: center; margin-bottom: 24px; font-size: 24px; }
+    .nav-bar { text-align: center; margin-bottom: 16px; }
+    .nav-bar a { color: #2563eb; text-decoration: none; font-size: 14px; }
+    .nav-bar a:hover { text-decoration: underline; }
+    .section { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .section h2 { font-size: 18px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
+    .upload-row { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 12px; }
+    .upload-item { flex: 1; min-width: 200px; }
+    .upload-item label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 14px; }
+    .upload-item input[type="file"] { font-size: 14px; }
+    .upload-item .preview { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .upload-item .preview img { height: 80px; border-radius: 4px; border: 1px solid #ddd; }
+    .form-row { display: flex; gap: 16px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+    .form-row label { font-weight: 600; font-size: 14px; }
+    .form-row input[type="text"] { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; width: 200px; }
+    .btn { padding: 8px 20px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+    .btn-green { background: #16a34a; color: #fff; }
+    .btn-green:hover:not(:disabled) { background: #15803d; }
+    .btn-sm { padding: 4px 12px; font-size: 12px; }
+    .btn-outline { background: #fff; color: #2563eb; border: 1px solid #2563eb; }
+    .btn-outline:hover:not(:disabled) { background: #eff6ff; }
+    .btn-danger { background: #fff; color: #dc2626; border: 1px solid #dc2626; }
+    .btn-danger:hover:not(:disabled) { background: #fef2f2; }
+    .btn-secondary { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+    .btn-secondary:hover:not(:disabled) { background: #e5e7eb; }
+    .results-grid { display: flex; gap: 16px; flex-wrap: wrap; }
+    .result-card { background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: 12px; text-align: center; width: 220px; }
+    .result-card img { width: 100%; border-radius: 4px; margin-bottom: 8px; cursor: pointer; }
+    .result-card .label { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    .status { margin: 12px 0; padding: 10px; border-radius: 6px; font-size: 14px; }
+    .status.info { background: #eff6ff; color: #1e40af; }
+    .status.error { background: #fef2f2; color: #991b1b; }
+    .status.success { background: #f0fdf4; color: #166534; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ccc; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; }
+    .modal-overlay.active { display: flex; }
+    .modal-overlay img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+    .modal-overlay .close { position: absolute; top: 20px; right: 20px; color: #fff; font-size: 32px; cursor: pointer; }
+    .check-icon { color: #16a34a; font-weight: bold; }
+    .refs-list { margin-top: 12px; }
+
+    /* History panel */
+    .history-panel { background: #fff; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .history-header h2 { font-size: 16px; margin: 0; padding: 0; border: none; }
+    .history-list { display: flex; gap: 10px; flex-wrap: wrap; }
+    .history-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 16px; min-width: 200px; max-width: 280px; background: #fafafa; position: relative; cursor: pointer; transition: border-color 0.2s; }
+    .history-card:hover { border-color: #2563eb; }
+    .history-card.active { border-color: #2563eb; background: #eff6ff; }
+    .history-card .hc-time { font-size: 13px; font-weight: 600; color: #374151; }
+    .history-card .hc-meta { font-size: 12px; color: #6b7280; margin-top: 4px; }
+    .history-card .hc-status { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-top: 6px; }
+    .hc-status.uploading { background: #fef3c7; color: #92400e; }
+    .hc-status.step1_done { background: #dbeafe; color: #1e40af; }
+    .hc-status.step2_done { background: #e0e7ff; color: #3730a3; }
+    .hc-status.finished { background: #d1fae5; color: #065f46; }
+    .history-card .hc-delete { position: absolute; top: 8px; right: 8px; background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 16px; line-height: 1; padding: 2px; }
+    .history-card .hc-delete:hover { color: #dc2626; }
+    .history-empty { font-size: 13px; color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>细节图替换工具</h1>
+    <div class="nav-bar">
+      <a href="/index.html">&larr; 返回详情页生成工具</a>
+    </div>
+
+    <!-- ==================== History Panel ==================== -->
+    <div class="history-panel">
+      <div class="history-header">
+        <h2>历史会话</h2>
+        <button class="btn btn-sm btn-primary" id="btnNewSession">+ 新建会话</button>
+      </div>
+      <div class="history-list" id="historyList">
+        <span class="history-empty">加载中...</span>
+      </div>
+    </div>
+
+    <!-- ==================== Upload Section ==================== -->
+    <div class="section">
+      <h2>上传素材</h2>
+      <div class="upload-row">
+        <div class="upload-item">
+          <label>细节参考图 (可上传多张, 每张参考图生成一张结果)</label>
+          <input type="file" id="detailRefs" accept="image/*" multiple>
+          <div class="refs-list" id="detailRefsList"></div>
+        </div>
+        <div class="upload-item">
+          <label>替换衣服图 (可上传多张, 作为新衣服的多角度参考)</label>
+          <input type="file" id="clothingRefs" accept="image/*" multiple>
+          <div class="refs-list" id="clothingRefsList"></div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>额外说明 (可选):</label>
+        <input type="text" id="additionalNotes" placeholder="如: 保持原图风格">
+        <button class="btn btn-primary" id="btnGenerate" disabled>开始生成</button>
+      </div>
+    </div>
+
+    <div id="statusArea"></div>
+
+    <!-- ==================== Results Section ==================== -->
+    <div class="section" id="resultsSection" style="display:none;">
+      <h2>生成结果</h2>
+      <div class="results-grid" id="resultsGrid"></div>
+    </div>
+  </div>
+
+  <!-- Image Modal -->
+  <div class="modal-overlay" id="modal">
+    <span class="close" id="modalClose">&times;</span>
+    <img id="modalImg" src="" alt="">
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    let currentSessionId = null;
+
+    // ==================== History ====================
+
+    const STATUS_LABELS = {
+      uploading: '上传中',
+      step1_done: 'Step1 完成',
+      step2_done: 'Step2 完成',
+      finished: '已完成',
+    };
+
+    async function loadHistory() {
+      try {
+        const res = await fetch('/api/history?type=clothingDetail');
+        const data = await res.json();
+        renderHistory(data.sessions || []);
+      } catch {
+        $('historyList').innerHTML = '<span class="history-empty">加载失败</span>';
+      }
+    }
+
+    function renderHistory(sessions) {
+      const list = $('historyList');
+      if (sessions.length === 0) {
+        list.innerHTML = '<span class="history-empty">暂无历史会话</span>';
+        return;
+      }
+      list.innerHTML = '';
+      for (const s of sessions) {
+        const card = document.createElement('div');
+        card.className = 'history-card' + (s.sessionId === currentSessionId ? ' active' : '');
+        const time = new Date(s.createdAt).toLocaleString('zh-CN');
+        card.innerHTML = `
+          <div class="hc-time">${time}</div>
+          <div class="hc-meta">${s.cdDetailRefCount || 0} 张细节图, ${s.cdClothingRefCount || 0} 张衣服图</div>
+          <span class="hc-status ${s.status}">${STATUS_LABELS[s.status] || s.status}</span>
+          <button class="hc-delete" title="删除" data-id="${s.sessionId}">&times;</button>
+        `;
+        card.addEventListener('click', (e) => {
+          if (e.target.classList.contains('hc-delete')) return;
+          restoreSession(s.sessionId);
+        });
+        card.querySelector('.hc-delete').addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteSessionById(s.sessionId);
+        });
+        list.appendChild(card);
+      }
+    }
+
+    async function restoreSession(sessionId) {
+      try {
+        const res = await fetch('/api/history/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, type: 'clothingDetail' }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        applySessionState(data);
+        loadHistory();
+      } catch (err) {
+        alert('恢复会话失败: ' + err.message);
+      }
+    }
+
+    async function deleteSessionById(sessionId) {
+      if (!confirm('确定要删除这个会话吗? 所有文件将被永久删除。')) return;
+      try {
+        const res = await fetch(`/api/history/${sessionId}?type=clothingDetail`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        if (data.activeSessionId !== currentSessionId) {
+          await loadCurrentSession();
+        }
+        loadHistory();
+      } catch (err) {
+        alert('删除失败: ' + err.message);
+      }
+    }
+
+    $('btnNewSession').addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/session/new', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'clothingDetail' }),
+        });
+        const data = await res.json();
+        applySessionState(data);
+        loadHistory();
+      } catch (err) {
+        alert('创建会话失败: ' + err.message);
+      }
+    });
+
+    // ==================== Session State ====================
+
+    let serverDetailRefs = [];
+    let serverClothingRefs = [];
+    let generatedIndexes = new Set();
+
+    function resetUI() {
+      serverDetailRefs = [];
+      serverClothingRefs = [];
+      generatedIndexes = new Set();
+      $('detailRefs').value = '';
+      $('clothingRefs').value = '';
+      $('detailRefsList').innerHTML = '';
+      $('clothingRefsList').innerHTML = '';
+      $('additionalNotes').value = '';
+      $('btnGenerate').disabled = true;
+      $('statusArea').innerHTML = '';
+      $('resultsSection').style.display = 'none';
+      $('resultsGrid').innerHTML = '';
+    }
+
+    function applySessionState(data) {
+      resetUI();
+      currentSessionId = data.sessionId;
+
+      if (data.cdDetailRefs && data.cdDetailRefs.length > 0) {
+        serverDetailRefs = data.cdDetailRefs;
+      }
+
+      if (data.cdClothingRefs && data.cdClothingRefs.length > 0) {
+        serverClothingRefs = data.cdClothingRefs;
+      }
+
+      if (data.cdNotes) {
+        $('additionalNotes').value = data.cdNotes;
+      }
+
+      if (data.cdResults && data.cdResults.length > 0) {
+        for (const r of data.cdResults) generatedIndexes.add(r.index);
+        renderResults(data.cdResults.map(r => ({
+          index: r.index,
+          name: (serverDetailRefs.find(m => m.index === r.index) || {}).name || `细节图 ${r.index + 1}`,
+          url: r.url,
+          generated: true,
+        })));
+      }
+
+      renderDetailRefsList();
+      renderClothingRefsList();
+      updateGenerateBtn();
+    }
+
+    async function loadCurrentSession() {
+      try {
+        const res = await fetch('/api/session?type=clothingDetail');
+        const data = await res.json();
+        applySessionState(data);
+      } catch (err) {
+        console.error('Failed to load session:', err);
+      }
+    }
+
+    // ==================== Upload Logic ====================
+
+    $('detailRefs').addEventListener('change', async e => {
+      const newFiles = [];
+      for (const file of e.target.files) {
+        newFiles.push(await fileToBase64Obj(file));
+      }
+      if (newFiles.length === 0) return;
+
+      const res = await fetch('/api/clothing-detail/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'detailRef',
+          files: newFiles.map(f => ({ name: f.name, data: f.data })),
+        }),
+      });
+      const data = await res.json();
+      serverDetailRefs = data.cdDetailRefs || [];
+      renderDetailRefsList();
+      updateGenerateBtn();
+      e.target.value = '';
+    });
+
+    $('clothingRefs').addEventListener('change', async e => {
+      const newFiles = [];
+      for (const file of e.target.files) {
+        newFiles.push(await fileToBase64Obj(file));
+      }
+      if (newFiles.length === 0) return;
+
+      const res = await fetch('/api/clothing-detail/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'clothingRef',
+          files: newFiles.map(f => ({ name: f.name, data: f.data })),
+        }),
+      });
+      const data = await res.json();
+      serverClothingRefs = data.cdClothingRefs || [];
+      renderClothingRefsList();
+      updateGenerateBtn();
+      e.target.value = '';
+    });
+
+    function renderDetailRefsList() {
+      const container = $('detailRefsList');
+      container.innerHTML = '';
+      if (serverDetailRefs.length === 0) return;
+
+      for (const ref of serverDetailRefs) {
+        const tag = document.createElement('span');
+        tag.style.cssText = 'display:inline-flex; align-items:center; gap:4px; font-size:12px; background:#f3f4f6; padding:3px 8px; border-radius:4px; margin:0 6px 6px 0;';
+        const done = generatedIndexes.has(ref.index);
+        tag.innerHTML = `${done ? '<span class="check-icon">&#10003;</span>' : ''} ${ref.name} <button style="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:14px;line-height:1;padding:0 2px;" title="删除" data-index="${ref.index}">&times;</button>`;
+        tag.querySelector('button').addEventListener('click', () => deleteDetailRef(ref.index));
+        container.appendChild(tag);
+      }
+    }
+
+    function renderClothingRefsList() {
+      const container = $('clothingRefsList');
+      container.innerHTML = '';
+      if (serverClothingRefs.length === 0) return;
+
+      for (const ref of serverClothingRefs) {
+        const tag = document.createElement('span');
+        tag.style.cssText = 'display:inline-flex; align-items:center; gap:4px; font-size:12px; background:#f3f4f6; padding:3px 8px; border-radius:4px; margin:0 6px 6px 0;';
+        tag.innerHTML = `${ref.name} <button style="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:14px;line-height:1;padding:0 2px;" title="删除" data-index="${ref.index}">&times;</button>`;
+        tag.querySelector('button').addEventListener('click', () => deleteClothingRef(ref.index));
+        container.appendChild(tag);
+      }
+    }
+
+    async function deleteDetailRef(index) {
+      try {
+        const res = await fetch(`/api/clothing-detail/detail-ref/${index}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        serverDetailRefs = data.cdDetailRefs || [];
+        generatedIndexes.delete(index);
+        renderDetailRefsList();
+        const card = $(`card-cd-${index}`);
+        if (card) card.remove();
+        if ($('resultsGrid').children.length === 0) {
+          $('resultsSection').style.display = 'none';
+        }
+        updateGenerateBtn();
+      } catch (err) {
+        showStatus('error', '删除失败: ' + err.message);
+      }
+    }
+
+    async function deleteClothingRef(index) {
+      try {
+        const res = await fetch(`/api/clothing-detail/clothing-ref/${index}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        serverClothingRefs = data.cdClothingRefs || [];
+        renderClothingRefsList();
+        updateGenerateBtn();
+      } catch (err) {
+        showStatus('error', '删除失败: ' + err.message);
+      }
+    }
+
+    function updateGenerateBtn() {
+      const hasDetail = serverDetailRefs.length > 0;
+      const hasClothing = serverClothingRefs.length > 0;
+      const hasPending = serverDetailRefs.some(r => !generatedIndexes.has(r.index));
+      $('btnGenerate').disabled = !(hasDetail && hasClothing && hasPending);
+    }
+
+    // ==================== Generate Logic ====================
+
+    $('btnGenerate').addEventListener('click', async () => {
+      $('btnGenerate').disabled = true;
+      const pendingCount = serverDetailRefs.filter(r => !generatedIndexes.has(r.index)).length;
+      showStatus('info', `<span class="spinner"></span>正在生成 ${pendingCount} 张细节图 (${serverClothingRefs.length} 张衣服参考), 请耐心等待...`);
+
+      try {
+        const res = await fetch('/api/clothing-detail/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ additionalNotes: $('additionalNotes').value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showStatus('success', `本次生成 ${data.newCount} 张, 共 ${data.results.length} 张`);
+        for (const r of data.results) {
+          if (r.generated) generatedIndexes.add(r.index);
+        }
+        renderDetailRefsList();
+        renderResults(data.results.filter(r => r.generated));
+        loadHistory();
+      } catch (err) {
+        showStatus('error', '生成失败: ' + err.message);
+      } finally {
+        updateGenerateBtn();
+      }
+    });
+
+    function renderResults(results) {
+      const grid = $('resultsGrid');
+      $('resultsSection').style.display = '';
+
+      for (const r of results) {
+        const existing = $(`card-cd-${r.index}`);
+        if (existing) existing.remove();
+        grid.appendChild(createResultCard(r.index, r.name, r.url));
+      }
+    }
+
+    function createResultCard(index, name, url) {
+      const card = document.createElement('div');
+      card.className = 'result-card';
+      card.id = `card-cd-${index}`;
+      const ts = Date.now();
+      card.innerHTML = `
+        <div class="label">${name}</div>
+        <img src="${url}?t=${ts}" alt="detail ${index + 1}" onclick="openModal(this.src)">
+        <input type="text" class="adjustment-input" placeholder="调整说明 (可选)" style="width:100%;padding:4px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;margin-bottom:6px;">
+        <div style="display:flex;gap:6px;justify-content:center;">
+          <button class="btn btn-sm btn-outline" onclick="regenerateCD(${index})">重新生成</button>
+          <a class="btn btn-sm btn-green" href="${url}" download="clothing-detail-${String(index + 1).padStart(2, '0')}.jpg">下载</a>
+        </div>
+      `;
+      return card;
+    }
+
+    window.regenerateCD = async (index) => {
+      const card = $(`card-cd-${index}`);
+      const btn = card.querySelector('button');
+      const adjustmentInput = card.querySelector('.adjustment-input');
+      const adjustmentPrompt = adjustmentInput ? adjustmentInput.value.trim() : '';
+      btn.disabled = true;
+      btn.textContent = '生成中...';
+      try {
+        const payload = { index };
+        if (adjustmentPrompt) payload.adjustmentPrompt = adjustmentPrompt;
+        const res = await fetch('/api/clothing-detail/regenerate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        card.querySelector('img').src = data.url + '?t=' + Date.now();
+        card.querySelector('a').href = data.url;
+        const detailName = (serverDetailRefs.find(m => m.index === index) || {}).name || `细节图 ${index + 1}`;
+        showStatus('success', `已重新生成: ${detailName}`);
+      } catch (err) {
+        showStatus('error', '重新生成失败: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '重新生成';
+      }
+    };
+
+    // ==================== Shared ====================
+
+    window.openModal = src => {
+      $('modalImg').src = src;
+      $('modal').classList.add('active');
+    };
+    $('modalClose').addEventListener('click', () => $('modal').classList.remove('active'));
+    $('modal').addEventListener('click', e => {
+      if (e.target === $('modal')) $('modal').classList.remove('active');
+    });
+
+    async function fileToBase64Obj(file) {
+      return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name, data: reader.result.split(',')[1] });
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function showStatus(type, html) {
+      $('statusArea').innerHTML = `<div class="status ${type}">${html}</div>`;
+    }
+
+    // Init
+    loadCurrentSession().then(() => loadHistory());
+  </script>
+</body>
+</html>
