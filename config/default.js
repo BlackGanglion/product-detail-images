@@ -8,7 +8,7 @@ export default {
     retryBaseDelay: 2000, // ms, exponential backoff: 2s → 4s → 8s
   },
   generation: {
-    aspectRatio: '3:4',
+    aspectRatio: '2:3',
     imageSize: '2K',
     concurrency: 3,
   },

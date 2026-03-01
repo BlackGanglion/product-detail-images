@@ -9,7 +9,7 @@ const { endpoint, key, maxRetries, retryBaseDelay } = config.api;
  * @param {Array<{mimeType: string, base64: string}>} images - Images to include
  * @returns {Promise<string>} - base64-encoded generated image
  */
-export async function generateImage(promptText, images) {
+export async function generateImage(promptText, images, options = {}) {
   const parts = [
     { text: promptText },
     ...images.map(img => ({
@@ -22,8 +22,8 @@ export async function generateImage(promptText, images) {
     generationConfig: {
       responseModalities: ['IMAGE'],
       imageConfig: {
-        aspectRatio: config.generation.aspectRatio,
-        imageSize: config.generation.imageSize,
+        aspectRatio: options.aspectRatio || config.generation.aspectRatio,
+        imageSize: options.imageSize || config.generation.imageSize,
       },
     },
   };
